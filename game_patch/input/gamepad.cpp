@@ -12,7 +12,7 @@ static SDL_Gamepad* g_gamepad = nullptr;
 static bool g_btn_prev[SDL_GAMEPAD_BUTTON_COUNT] = {};
 static bool g_btn_curr[SDL_GAMEPAD_BUTTON_COUNT] = {};
 static float g_look_sensitivity = 5.0f;
-static float g_deadzone = 0.15f;
+static float g_deadzone = 0.25f;
 
 static float apply_deadzone(float v, float dz)
 {
@@ -24,13 +24,13 @@ static float apply_deadzone(float v, float dz)
 static float get_stick_axis(SDL_GamepadAxis axis)
 {
     if (!g_gamepad) return 0.0f;
-    return apply_deadzone(SDL_GetGamepadAxis(g_gamepad, axis) / 32767.0f, g_deadzone);
+    return apply_deadzone(SDL_GetGamepadAxis(g_gamepad, axis) / (float)SDL_MAX_SINT16, g_deadzone);
 }
 
 static float get_trigger_axis(SDL_GamepadAxis axis)
 {
     if (!g_gamepad) return 0.0f;
-    float v = SDL_GetGamepadAxis(g_gamepad, axis) / 32767.0f;
+    float v = SDL_GetGamepadAxis(g_gamepad, axis) / (float)SDL_MAX_SINT16;
     return v > 0.05f ? v : 0.0f;
 }
 
@@ -88,43 +88,46 @@ static void try_open_gamepad(SDL_JoystickID id)
         xlog::warn("Failed to open gamepad: {}", SDL_GetError());
 }
 
-static void gamepad_handle_events()
-{
-    // SDL_PumpEvents requires the SDL main thread, but this hook fires on RF's game
-    // thread (different from the thread that called SDL_InitSubSystem). Use polling
-    // instead — SDL_GamepadConnected and SDL_GetGamepads are thread-safe.
-
-    if (g_gamepad && !SDL_GamepadConnected(g_gamepad)) {
-        xlog::info("Gamepad disconnected");
-        SDL_CloseGamepad(g_gamepad);
-        g_gamepad = nullptr;
-    }
-
-    if (!g_gamepad) {
-        int count = 0;
-        SDL_JoystickID* ids = SDL_GetGamepads(&count);
-        if (ids) {
-            if (count > 0)
-                try_open_gamepad(ids[0]);
-            SDL_free(ids);
-        }
-    }
-}
-
 static void gamepad_update()
 {
-    // SDL_UpdateGamepads() is normally called by SDL's own event loop. Since we don't
-    // use SDL's event loop, we must call it manually. It must run unconditionally so
-    // that SDL processes gamepad connect/disconnect events for hotplug to work.
+    // Snapshot the previous frame's button state before processing new events.
+    std::copy(std::begin(g_btn_curr), std::end(g_btn_curr), std::begin(g_btn_prev));
+
+    // SDL_UpdateGamepads() reads hardware state and pushes gamepad events into SDL's
+    // internal queue without needing to pump the event system.
     SDL_UpdateGamepads();
 
-    gamepad_handle_events();
-
-    if (!g_gamepad) return;
-
-    for (int i = 0; i < SDL_GAMEPAD_BUTTON_COUNT; ++i) {
-        g_btn_prev[i] = g_btn_curr[i];
-        g_btn_curr[i] = SDL_GetGamepadButton(g_gamepad, static_cast<SDL_GamepadButton>(i));
+    // Drain all pending gamepad events. SDL_PeepEvents is thread-safe and, unlike
+    // SDL_PollEvent, does NOT call SDL_PumpEvents — safe to call on RF's game thread.
+    SDL_Event ev;
+    while (SDL_PeepEvents(&ev, 1, SDL_GETEVENT,
+                          SDL_EVENT_GAMEPAD_AXIS_MOTION,
+                          SDL_EVENT_GAMEPAD_STEAM_HANDLE_UPDATED) > 0) {
+        switch (ev.type) {
+        case SDL_EVENT_GAMEPAD_ADDED:
+            if (!g_gamepad)
+                try_open_gamepad(ev.gdevice.which);
+            break;
+        case SDL_EVENT_GAMEPAD_REMOVED:
+            if (g_gamepad && SDL_GetGamepadID(g_gamepad) == ev.gdevice.which) {
+                xlog::info("Gamepad disconnected");
+                SDL_CloseGamepad(g_gamepad);
+                g_gamepad = nullptr;
+                // Clear button state so no inputs remain stuck after disconnect.
+                std::fill(std::begin(g_btn_curr), std::end(g_btn_curr), false);
+            }
+            break;
+        case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+            if (g_gamepad && SDL_GetGamepadID(g_gamepad) == ev.gbutton.which
+                && ev.gbutton.button < SDL_GAMEPAD_BUTTON_COUNT)
+                g_btn_curr[ev.gbutton.button] = true;
+            break;
+        case SDL_EVENT_GAMEPAD_BUTTON_UP:
+            if (g_gamepad && SDL_GetGamepadID(g_gamepad) == ev.gbutton.which
+                && ev.gbutton.button < SDL_GAMEPAD_BUTTON_COUNT)
+                g_btn_curr[ev.gbutton.button] = false;
+            break;
+        }
     }
 }
 
@@ -137,7 +140,7 @@ FunHook<void(int&, int&, int&)> mouse_get_delta_hook{
         gamepad_update();
 
         // START button → inject a KEY_ESC press/release to open the in-game menu.
-        const bool start_curr = g_gamepad && SDL_GetGamepadButton(g_gamepad, SDL_GAMEPAD_BUTTON_START);
+        const bool start_curr = g_gamepad && g_btn_curr[SDL_GAMEPAD_BUTTON_START];
         const bool start_prev = g_btn_prev[SDL_GAMEPAD_BUTTON_START];
         if (start_curr && !start_prev) {
             rf::key_process_event(rf::KEY_ESC, 1, 0);
@@ -191,7 +194,7 @@ ConsoleCommand2 gp_deadzone_cmd{
         if (val) g_deadzone = std::clamp(val.value(), 0.0f, 0.9f);
         rf::console::print("Gamepad stick deadzone: {:.2f}", g_deadzone);
     },
-    "Set gamepad stick deadzone 0.0-0.9 (default 0.15)",
+    "Set gamepad stick deadzone 0.0-0.9 (default 0.25)",
     "gp_deadzone [value]",
 };
 
@@ -207,12 +210,16 @@ void gamepad_apply_patch()
     }
 
     // Open any gamepad already connected at startup
-    int count = 0;
-    SDL_JoystickID* ids = SDL_GetGamepads(&count);
-    if (ids) {
-        if (count > 0)
-            try_open_gamepad(ids[0]);
-        SDL_free(ids);
+    if (SDL_HasGamepad()) {
+        int count = 0;
+        SDL_JoystickID* ids = SDL_GetGamepads(&count);
+        if (ids) {
+            for (int i = 0; i < count; ++i)
+                xlog::info("Gamepad found: {}", SDL_GetGamepadNameForID(ids[i]));
+            if (count > 0)
+                try_open_gamepad(ids[0]);
+            SDL_free(ids);
+        }
     }
 
     mouse_get_delta_hook.install();
