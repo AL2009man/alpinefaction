@@ -13,6 +13,7 @@
 #include "../rf/entity.h"
 #include "../misc/alpine_settings.h"
 #include "../main/main.h"
+#include "gamepad.h"
 
 static float scope_sensitivity_value = 0.25f;
 static float scanner_sensitivity_value = 0.25f;
@@ -313,6 +314,21 @@ CodeInjection linear_pitch_patch{
     },
 };
 
+CodeInjection gamepad_rotation_injection{
+    0x0049DEC9,
+    [](auto& regs) {
+        float& pitch_delta = *reinterpret_cast<float*>(regs.esp + 0x44 - 0x34);
+        float& yaw_delta = *reinterpret_cast<float*>(regs.esp + 0x44 + 0x4);
+        
+        // Add gamepad rotation deltas to the game's computed deltas
+        float gamepad_pitch = 0.0f, gamepad_yaw = 0.0f;
+        gamepad_get_rotation_deltas(gamepad_pitch, gamepad_yaw);
+        
+        pitch_delta += gamepad_pitch;
+        yaw_delta += gamepad_yaw;
+    },
+};
+
 ConsoleCommand2 linear_pitch_cmd{
     "cl_linearpitch",
     []() {
@@ -350,7 +366,10 @@ void mouse_apply_patch()
     // Use exclusive DirectInput mode so cursor cannot exit game window
     //write_mem<u8>(0x0051E14B + 1, 5); // DISCL_EXCLUSIVE|DISCL_FOREGROUND
 
-    // Linear vertical rotation (pitch)
+    // Gamepad camera rotation
+    gamepad_rotation_injection.install();
+
+    // Linear vertical rotation for mouse
     linear_pitch_patch.install();
 
     // Commands

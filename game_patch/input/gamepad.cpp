@@ -2,15 +2,20 @@
 #include <algorithm>
 #include <optional>
 #include <patch_common/FunHook.h>
+#include <patch_common/CodeInjection.h>
 #include <xlog/xlog.h>
 #include "../os/console.h"
 #include "../rf/input.h"
+#include "../rf/player/player.h"
+#include "../rf/player/camera.h"
 #include "../rf/player/control_config.h"
+#include "../rf/entity.h"
+#include "../rf/os/frametime.h"
 #include <SDL3/SDL.h>
 
 static SDL_Gamepad* g_gamepad = nullptr;
-static float g_look_sensitivity = 5.0f;
 static float g_deadzone = 0.25f;
+static float g_gamepad_sensitivity = 2.5f; 
 
 // Input layer: indexed by SDL_GamepadButton, value is rf::ControlConfigAction cast to int, -1 = unbound.
 static int g_button_map[SDL_GAMEPAD_BUTTON_COUNT];
@@ -97,7 +102,7 @@ static void gamepad_update()
         g_action_curr[rf::CC_ACTION_SECONDARY_ATTACK] = rt > 0.5f;
         g_action_curr[rf::CC_ACTION_CROUCH]           = lt > 0.5f;
 
-        // Left stick movement - direct mapping like keyboard WASD
+        // Left stick movement 
         float ly = get_axis(SDL_GAMEPAD_AXIS_LEFTY);
         float lx = get_axis(SDL_GAMEPAD_AXIS_LEFTX);
         const float stick_threshold = 0.3f;
@@ -116,15 +121,28 @@ static void gamepad_update()
     }
 }
 
+void gamepad_get_rotation_deltas(float& pitch_delta, float& yaw_delta)
+{
+    pitch_delta = 0.0f;
+    yaw_delta = 0.0f;
+
+    if (!g_gamepad || !rf::keep_mouse_centered)
+        return;
+
+    float rx = get_axis(SDL_GAMEPAD_AXIS_RIGHTX);
+    float ry = get_axis(SDL_GAMEPAD_AXIS_RIGHTY);
+
+    // Quake-style: frametime * sensitivity * input
+    yaw_delta = rf::frametime * g_gamepad_sensitivity * rx;
+    pitch_delta = -rf::frametime * g_gamepad_sensitivity * ry;
+}
+
 FunHook<void(int&, int&, int&)> mouse_get_delta_hook{
     0x0051E630,
     [](int& dx, int& dy, int& dz) {
         mouse_get_delta_hook.call_target(dx, dy, dz);
         gamepad_update();
-        if (g_gamepad && rf::keep_mouse_centered) {
-            dx += static_cast<int>(get_axis(SDL_GAMEPAD_AXIS_RIGHTX) * g_look_sensitivity);
-            dy += static_cast<int>(get_axis(SDL_GAMEPAD_AXIS_RIGHTY) * g_look_sensitivity);
-        }
+        // Gamepad rotation is now applied via injection in mouse.cpp at 0x0049DEC9
     },
 };
 
@@ -150,8 +168,8 @@ FunHook<bool(rf::ControlConfig*, rf::ControlConfigAction, bool*)> control_config
 ConsoleCommand2 gp_sens_cmd{
     "gp_sens",
     [](std::optional<float> val) {
-        if (val) g_look_sensitivity = std::max(0.1f, val.value());
-        rf::console::print("Gamepad look sensitivity: {:.2f}", g_look_sensitivity);
+        if (val) g_gamepad_sensitivity = std::max(0.0f, val.value());
+        rf::console::print("Gamepad sensitivity: {:.4f}", g_gamepad_sensitivity);
     },
     "Set gamepad look sensitivity (default 5.0)",
     "gp_sens [value]",
