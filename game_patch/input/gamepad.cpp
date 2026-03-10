@@ -1,0 +1,210 @@
+#include "gamepad.h"
+#include <algorithm>
+#include <optional>
+#include <patch_common/FunHook.h>
+#include <xlog/xlog.h>
+#include "../os/console.h"
+#include "../rf/input.h"
+#include "../rf/player/control_config.h"
+#include <SDL3/SDL.h>
+
+static SDL_Gamepad* g_gamepad = nullptr;
+static float g_look_sensitivity = 5.0f;
+static float g_deadzone = 0.25f;
+
+// Input layer: indexed by SDL_GamepadButton, value is rf::ControlConfigAction cast to int, -1 = unbound.
+static int g_button_map[SDL_GAMEPAD_BUTTON_COUNT];
+
+// Gameplay action layer state, indexed by rf::ControlConfigAction.
+static constexpr int k_action_count = static_cast<int>(rf::CC_ACTION_QUICK_LOAD) + 1;
+static bool g_action_prev[k_action_count] = {};
+static bool g_action_curr[k_action_count] = {};
+
+// Normalize an axis value and strip the deadzone band.
+static float get_axis(SDL_GamepadAxis axis)
+{
+    if (!g_gamepad) return 0.0f;
+    float v = SDL_GetGamepadAxis(g_gamepad, axis) / (float)SDL_MAX_SINT16;
+    if (v >  g_deadzone) return (v - g_deadzone) / (1.0f - g_deadzone);
+    if (v < -g_deadzone) return (v + g_deadzone) / (1.0f - g_deadzone);
+    return 0.0f;
+}
+
+static bool action_is_down(rf::ControlConfigAction action)
+{
+    int i = static_cast<int>(action);
+    return i >= 0 && i < k_action_count && g_action_curr[i];
+}
+
+static bool action_just_pressed(rf::ControlConfigAction action)
+{
+    int i = static_cast<int>(action);
+    return i >= 0 && i < k_action_count && g_action_curr[i] && !g_action_prev[i];
+}
+
+static void try_open_gamepad(SDL_JoystickID id)
+{
+    g_gamepad = SDL_OpenGamepad(id);
+    if (g_gamepad)
+        xlog::info("Gamepad connected: {}", SDL_GetGamepadName(g_gamepad));
+    else
+        xlog::warn("Failed to open gamepad: {}", SDL_GetError());
+}
+
+static void gamepad_update()
+{
+    memcpy(g_action_prev, g_action_curr, sizeof(g_action_curr));
+    SDL_UpdateGamepads();
+
+    SDL_Event ev;
+    while (SDL_PeepEvents(&ev, 1, SDL_GETEVENT,
+                          SDL_EVENT_GAMEPAD_AXIS_MOTION,
+                          SDL_EVENT_GAMEPAD_STEAM_HANDLE_UPDATED) > 0) {
+        switch (ev.type) {
+        case SDL_EVENT_GAMEPAD_ADDED:
+            if (!g_gamepad)
+                try_open_gamepad(ev.gdevice.which);
+            break;
+        case SDL_EVENT_GAMEPAD_REMOVED:
+            if (g_gamepad && SDL_GetGamepadID(g_gamepad) == ev.gdevice.which) {
+                xlog::info("Gamepad disconnected");
+                SDL_CloseGamepad(g_gamepad);
+                g_gamepad = nullptr;
+                memset(g_action_curr, 0, sizeof(g_action_curr));
+            }
+            break;
+        case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+            if (!g_gamepad || SDL_GetGamepadID(g_gamepad) != ev.gbutton.which) break;
+            if (ev.gbutton.button == SDL_GAMEPAD_BUTTON_START) {
+                rf::key_process_event(rf::KEY_ESC, 1, 0);
+                rf::key_process_event(rf::KEY_ESC, 0, 0);
+            }
+            if (ev.gbutton.button < SDL_GAMEPAD_BUTTON_COUNT && g_button_map[ev.gbutton.button] >= 0)
+                g_action_curr[g_button_map[ev.gbutton.button]] = true;
+            break;
+        case SDL_EVENT_GAMEPAD_BUTTON_UP:
+            if (!g_gamepad || SDL_GetGamepadID(g_gamepad) != ev.gbutton.which) break;
+            if (ev.gbutton.button < SDL_GAMEPAD_BUTTON_COUNT && g_button_map[ev.gbutton.button] >= 0)
+                g_action_curr[g_button_map[ev.gbutton.button]] = false;
+            break;
+        }
+    }
+
+    // Axis-driven actions: evaluated each frame after the prev snapshot.
+    if (g_gamepad) {
+        float rt = SDL_GetGamepadAxis(g_gamepad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) / (float)SDL_MAX_SINT16;
+        float lt = SDL_GetGamepadAxis(g_gamepad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER)  / (float)SDL_MAX_SINT16;
+        g_action_curr[rf::CC_ACTION_SECONDARY_ATTACK] = rt > 0.5f;
+        g_action_curr[rf::CC_ACTION_CROUCH]           = lt > 0.5f;
+
+        // Left stick movement - direct mapping like keyboard WASD
+        float ly = get_axis(SDL_GAMEPAD_AXIS_LEFTY);
+        float lx = get_axis(SDL_GAMEPAD_AXIS_LEFTX);
+        const float stick_threshold = 0.3f;
+        
+        // Set movement actions based on stick position (don't reset - OR logic in hook handles this)
+        g_action_curr[static_cast<int>(rf::CC_ACTION_FORWARD)]     = ly < -stick_threshold;  // stick up = forward (W key)
+        g_action_curr[static_cast<int>(rf::CC_ACTION_BACKWARD)]    = ly >  stick_threshold;  // stick down = backward (S key)
+        g_action_curr[static_cast<int>(rf::CC_ACTION_SLIDE_LEFT)]  = lx < -stick_threshold;  // stick left = slide left (A key)
+        g_action_curr[static_cast<int>(rf::CC_ACTION_SLIDE_RIGHT)] = lx >  stick_threshold;  // stick right = slide right (D key)
+    } else {
+        // No gamepad - ensure movement actions are not set
+        g_action_curr[static_cast<int>(rf::CC_ACTION_FORWARD)]     = false;
+        g_action_curr[static_cast<int>(rf::CC_ACTION_BACKWARD)]    = false;
+        g_action_curr[static_cast<int>(rf::CC_ACTION_SLIDE_LEFT)]  = false;
+        g_action_curr[static_cast<int>(rf::CC_ACTION_SLIDE_RIGHT)] = false;
+    }
+}
+
+FunHook<void(int&, int&, int&)> mouse_get_delta_hook{
+    0x0051E630,
+    [](int& dx, int& dy, int& dz) {
+        mouse_get_delta_hook.call_target(dx, dy, dz);
+        gamepad_update();
+        if (g_gamepad && rf::keep_mouse_centered) {
+            dx += static_cast<int>(get_axis(SDL_GAMEPAD_AXIS_RIGHTX) * g_look_sensitivity);
+            dy += static_cast<int>(get_axis(SDL_GAMEPAD_AXIS_RIGHTY) * g_look_sensitivity);
+        }
+    },
+};
+
+FunHook<bool(rf::ControlConfig*, rf::ControlConfigAction)> control_is_control_down_hook{
+    0x00430F40,
+    [](rf::ControlConfig* ccp, rf::ControlConfigAction action) -> bool {
+        return control_is_control_down_hook.call_target(ccp, action) || action_is_down(action);
+    },
+};
+
+FunHook<bool(rf::ControlConfig*, rf::ControlConfigAction, bool*)> control_config_check_pressed_hook{
+    0x0043D4F0,
+    [](rf::ControlConfig* ccp, rf::ControlConfigAction action, bool* just_pressed) -> bool {
+        bool result = control_config_check_pressed_hook.call_target(ccp, action, just_pressed);
+        if (!result && action_just_pressed(action)) {
+            if (just_pressed) *just_pressed = true;
+            return true;
+        }
+        return result;
+    },
+};
+
+ConsoleCommand2 gp_sens_cmd{
+    "gp_sens",
+    [](std::optional<float> val) {
+        if (val) g_look_sensitivity = std::max(0.1f, val.value());
+        rf::console::print("Gamepad look sensitivity: {:.2f}", g_look_sensitivity);
+    },
+    "Set gamepad look sensitivity (default 5.0)",
+    "gp_sens [value]",
+};
+
+ConsoleCommand2 gp_deadzone_cmd{
+    "gp_deadzone",
+    [](std::optional<float> val) {
+        if (val) g_deadzone = std::clamp(val.value(), 0.0f, 0.9f);
+        rf::console::print("Gamepad stick deadzone: {:.2f}", g_deadzone);
+    },
+    "Set gamepad stick deadzone 0.0-0.9 (default 0.25)",
+    "gp_deadzone [value]",
+};
+
+void gamepad_apply_patch()
+{
+    // Default button → action bindings. All unbound slots stay -1.
+    memset(g_button_map, -1, sizeof(g_button_map));
+    g_button_map[SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER] = rf::CC_ACTION_PRIMARY_ATTACK;
+    g_button_map[SDL_GAMEPAD_BUTTON_LEFT_SHOULDER]  = rf::CC_ACTION_JUMP;
+    g_button_map[SDL_GAMEPAD_BUTTON_SOUTH]          = rf::CC_ACTION_USE;
+    g_button_map[SDL_GAMEPAD_BUTTON_NORTH]          = rf::CC_ACTION_RELOAD;
+    g_button_map[SDL_GAMEPAD_BUTTON_EAST]           = rf::CC_ACTION_NEXT_WEAPON;
+    g_button_map[SDL_GAMEPAD_BUTTON_WEST]           = rf::CC_ACTION_PREV_WEAPON;
+    g_button_map[SDL_GAMEPAD_BUTTON_DPAD_LEFT]      = rf::CC_ACTION_HIDE_WEAPON;
+    g_button_map[SDL_GAMEPAD_BUTTON_DPAD_RIGHT]     = rf::CC_ACTION_MESSAGES;
+    // SDL_GAMEPAD_BUTTON_BACK, DPAD_UP, DPAD_DOWN, LEFT_STICK, RIGHT_STICK,
+    // MISC1, RIGHT_PADDLE1/2, LEFT_PADDLE1/2, TOUCHPAD, MISC2-6 — unbound by default.
+
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+
+    if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD)) {
+        xlog::error("Failed to initialize SDL gamepad subsystem: {}", SDL_GetError());
+        return;
+    }
+
+    if (SDL_HasGamepad()) {
+        int count = 0;
+        SDL_JoystickID* ids = SDL_GetGamepads(&count);
+        if (ids) {
+            for (int i = 0; i < count; ++i)
+                xlog::info("Gamepad found: {}", SDL_GetGamepadNameForID(ids[i]));
+            if (count > 0)
+                try_open_gamepad(ids[0]);
+            SDL_free(ids);
+        }
+    }
+
+    mouse_get_delta_hook.install();
+    control_is_control_down_hook.install();
+    control_config_check_pressed_hook.install();
+    gp_sens_cmd.register_cmd();
+    gp_deadzone_cmd.register_cmd();
+    xlog::info("Gamepad support initialized");
+}
