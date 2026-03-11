@@ -281,47 +281,68 @@ void linear_pitch_test()
 }
 #endif // DEBUG
 
-CodeInjection camera_angle_injection{
+CodeInjection linear_pitch_patch{
+    0x0049DEC9,
+    [](auto& regs) {
+        if (!g_alpine_game_config.mouse_linear_pitch)
+            return;
+        // Non-linear pitch value and delta from RF
+        rf::Entity* entity = regs.esi;
+        float current_yaw = entity->control_data.phb.y;
+        float current_pitch_non_lin = entity->control_data.eye_phb.x;
+        float& pitch_delta = *reinterpret_cast<float*>(regs.esp + 0x44 - 0x34);
+        float& yaw_delta = *reinterpret_cast<float*>(regs.esp + 0x44 + 0x4);
+        if (pitch_delta == 0)
+            return;
+        // Convert to linear space (see RotMatixFromEuler function at 004A0D70)
+        auto fvec = fw_vector_from_non_linear_yaw_pitch(current_yaw, current_pitch_non_lin);
+        float current_pitch_lin = linear_pitch_from_forward_vector(fvec);
+        // Calculate new pitch in linear space
+        float new_pitch_lin = current_pitch_lin + pitch_delta;
+        float new_yaw = current_yaw + yaw_delta;
+        // Clamp to [-pi, pi]
+        constexpr float half_pi = 1.5707964f;
+        new_pitch_lin = std::clamp(new_pitch_lin, -half_pi, half_pi);
+        // Convert back to non-linear space
+        auto fvec_new = fw_vector_from_linear_yaw_pitch(new_yaw, new_pitch_lin);
+        float new_pitch_non_lin = non_linear_pitch_from_fw_vector(fvec_new);
+        // Update non-linear pitch delta
+        float new_pitch_delta = new_pitch_non_lin - current_pitch_non_lin;
+        xlog::trace("non-lin {} lin {} delta {} new {}", current_pitch_non_lin, current_pitch_lin, pitch_delta,
+              new_pitch_delta);
+        pitch_delta = new_pitch_delta;
+    },
+};
+
+CodeInjection gamepad_rotation_injection{
     0x0049DEC9,
     [](auto& regs) {
         rf::Entity* entity = regs.esi;
         float& pitch_delta = *reinterpret_cast<float*>(regs.esp + 0x44 - 0x34);
         float& yaw_delta = *reinterpret_cast<float*>(regs.esp + 0x44 + 0x4);
 
-        // Base mouse scaling
-        constexpr float mouse_scale = 0.022f;
+        // Add gamepad rotation deltas to the game's computed deltas
+        float gamepad_pitch = 0.0f, gamepad_yaw = 0.0f;
+        gamepad_get_camera(gamepad_pitch, gamepad_yaw);
+        pitch_delta += gamepad_pitch;
+        yaw_delta += gamepad_yaw;
+
+        // Apply linear pitch correction to the gamepad-contributed pitch.
+        // linear_pitch_patch already ran (it is installed after us, so runs first) and
+        // handled any mouse delta. We only re-run the conversion when the gamepad
+        // actually adds pitch, to avoid double-linearizing mouse-only frames.
+        if (gamepad_pitch == 0.0f || !g_alpine_game_config.mouse_linear_pitch)
+            return;
+        float current_yaw = entity->control_data.phb.y;
+        float current_pitch_non_lin = entity->control_data.eye_phb.x;
+        auto fvec = fw_vector_from_non_linear_yaw_pitch(current_yaw, current_pitch_non_lin);
+        float current_pitch_lin = linear_pitch_from_forward_vector(fvec);
         constexpr float half_pi = 1.5707964f;
-        constexpr float pi = 3.14159265f;
-
-        // Yaw: accumulate mouse delta (scaled) plus gamepad delta (already in radians)
-        float gp_pitch_delta = 0.0f, gp_yaw_delta = 0.0f;
-        gamepad_get_camera(gp_pitch_delta, gp_yaw_delta);
-
-        float yaw = entity->control_data.phb.y + (yaw_delta * mouse_scale) + gp_yaw_delta;
-        while (yaw > pi) yaw -= 2.0f * pi;
-        while (yaw < -pi) yaw += 2.0f * pi;
-
-        float new_pitch_non_lin;
-        if (g_alpine_game_config.mouse_linear_pitch) {
-            float current_pitch_non_lin = entity->control_data.eye_phb.x;
-            auto fvec = fw_vector_from_non_linear_yaw_pitch(entity->control_data.phb.y, current_pitch_non_lin);
-            float current_pitch_lin = linear_pitch_from_forward_vector(fvec);
-            float new_pitch_lin = std::clamp(current_pitch_lin + (pitch_delta * mouse_scale) + gp_pitch_delta, -half_pi, half_pi);
-            auto fvec_new = fw_vector_from_linear_yaw_pitch(yaw, new_pitch_lin);
-            new_pitch_non_lin = non_linear_pitch_from_fw_vector(fvec_new);
-        }
-        else {
-            // Non-linear path: apply delta directly to the stored angle
-            new_pitch_non_lin = std::clamp(
-                entity->control_data.eye_phb.x + (pitch_delta * mouse_scale) + gp_pitch_delta,
-                -half_pi, half_pi);
-        }
-
-        // Write back and zero deltas
-        entity->control_data.eye_phb.x = new_pitch_non_lin;
-        entity->control_data.phb.y = yaw;
-        pitch_delta = 0.0f;
-        yaw_delta = 0.0f;
+        float new_pitch_lin = std::clamp(current_pitch_lin + pitch_delta, -half_pi, half_pi);
+        float new_yaw = current_yaw + yaw_delta;
+        auto fvec_new = fw_vector_from_linear_yaw_pitch(new_yaw, new_pitch_lin);
+        float new_pitch_non_lin = non_linear_pitch_from_fw_vector(fvec_new);
+        pitch_delta = new_pitch_non_lin - current_pitch_non_lin;
     },
 };
 
@@ -361,8 +382,11 @@ void mouse_apply_patch()
     // Use exclusive DirectInput mode so cursor cannot exit game window
     //write_mem<u8>(0x0051E14B + 1, 5); // DISCL_EXCLUSIVE|DISCL_FOREGROUND
 
-    // Camera angle accumulation
-    camera_angle_injection.install();
+    // Gamepad camera rotation
+    gamepad_rotation_injection.install();
+
+    // Linear vertical rotation for mouse
+    linear_pitch_patch.install();
 
     // Commands
     input_mode_cmd.register_cmd();
