@@ -305,23 +305,6 @@ static void apply_linear_pitch(float current_yaw, float current_pitch_non_lin, f
 CodeInjection linear_pitch_patch{
     0x0049DEC9,
     [](auto& regs) {
-        if (!g_alpine_game_config.mouse_linear_pitch)
-            return;
-        // Non-linear pitch value and delta from RF
-        rf::Entity* entity = regs.esi;
-        float current_yaw = entity->control_data.phb.y;
-        float current_pitch_non_lin = entity->control_data.eye_phb.x;
-        float& pitch_delta = *reinterpret_cast<float*>(regs.esp + 0x44 - 0x34);
-        float& yaw_delta = *reinterpret_cast<float*>(regs.esp + 0x44 + 0x4);
-        if (pitch_delta == 0)
-            return;
-        apply_linear_pitch(current_yaw, current_pitch_non_lin, pitch_delta, yaw_delta);
-    },
-};
-
-CodeInjection gamepad_rotation_injection{
-    0x0049DEC9,
-    [](auto& regs) {
         rf::Entity* entity = regs.esi;
         float& pitch_delta = *reinterpret_cast<float*>(regs.esp + 0x44 - 0x34);
         float& yaw_delta = *reinterpret_cast<float*>(regs.esp + 0x44 + 0x4);
@@ -332,11 +315,12 @@ CodeInjection gamepad_rotation_injection{
         pitch_delta += gamepad_pitch;
         yaw_delta += gamepad_yaw;
 
-        if (gamepad_pitch == 0.0f || !g_alpine_game_config.mouse_linear_pitch)
-            return;
-        float current_yaw = entity->control_data.phb.y;
-        float current_pitch_non_lin = entity->control_data.eye_phb.x;
-        apply_linear_pitch(current_yaw, current_pitch_non_lin, pitch_delta, yaw_delta);
+        // Apply linear pitch correction to combined mouse+gamepad delta
+        if (g_alpine_game_config.mouse_linear_pitch && pitch_delta != 0) {
+            float current_yaw = entity->control_data.phb.y;
+            float current_pitch_non_lin = entity->control_data.eye_phb.x;
+            apply_linear_pitch(current_yaw, current_pitch_non_lin, pitch_delta, yaw_delta);
+        }
     },
 };
 
@@ -376,10 +360,7 @@ void mouse_apply_patch()
     // Use exclusive DirectInput mode so cursor cannot exit game window
     //write_mem<u8>(0x0051E14B + 1, 5); // DISCL_EXCLUSIVE|DISCL_FOREGROUND
 
-    // Gamepad camera rotation
-    gamepad_rotation_injection.install();
-
-    // Linear vertical rotation for mouse
+  // Linear vertical rotation for mouse and gamepad
     linear_pitch_patch.install();
 
     // Commands
