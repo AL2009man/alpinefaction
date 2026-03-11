@@ -326,11 +326,7 @@ CodeInjection gamepad_rotation_injection{
         gamepad_get_camera(gamepad_pitch, gamepad_yaw);
         pitch_delta += gamepad_pitch;
         yaw_delta += gamepad_yaw;
-
-        // Apply linear pitch correction to the gamepad-contributed pitch.
-        // linear_pitch_patch already ran (it is installed after us, so runs first) and
-        // handled any mouse delta. We only re-run the conversion when the gamepad
-        // actually adds pitch, to avoid double-linearizing mouse-only frames.
+        
         if (gamepad_pitch == 0.0f || !g_alpine_game_config.mouse_linear_pitch)
             return;
         float current_yaw = entity->control_data.phb.y;
