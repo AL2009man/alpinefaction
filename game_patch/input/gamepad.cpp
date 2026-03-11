@@ -15,7 +15,7 @@
 
 static SDL_Gamepad* g_gamepad = nullptr;
 static float g_deadzone = 0.25f;
-static float g_gamepad_sensitivity = 2.5f; 
+static float g_gamepad_joy_sensitivity = 2.5f;
 
 // Input layer: indexed by SDL_GamepadButton, value is rf::ControlConfigAction cast to int, -1 = unbound.
 static int g_button_map[SDL_GAMEPAD_BUTTON_COUNT];
@@ -121,7 +121,7 @@ static void gamepad_update()
     }
 }
 
-void gamepad_get_rotation_deltas(float& pitch_delta, float& yaw_delta)
+void gamepad_get_camera(float& pitch_delta, float& yaw_delta)
 {
     pitch_delta = 0.0f;
     yaw_delta = 0.0f;
@@ -133,8 +133,8 @@ void gamepad_get_rotation_deltas(float& pitch_delta, float& yaw_delta)
     float ry = get_axis(SDL_GAMEPAD_AXIS_RIGHTY);
 
     // Quake-style: frametime * sensitivity * input
-    yaw_delta = rf::frametime * g_gamepad_sensitivity * rx;
-    pitch_delta = -rf::frametime * g_gamepad_sensitivity * ry;
+    yaw_delta = rf::frametime * g_gamepad_joy_sensitivity * rx;
+    pitch_delta = -rf::frametime * g_gamepad_joy_sensitivity * ry;
 }
 
 FunHook<void(int&, int&, int&)> mouse_get_delta_hook{
@@ -164,25 +164,24 @@ FunHook<bool(rf::ControlConfig*, rf::ControlConfigAction, bool*)> control_config
         return result;
     },
 };
-
-ConsoleCommand2 gp_sens_cmd{
-    "gp_sens",
+ConsoleCommand2 joy_sens_cmd{
+    "joy_sens",
     [](std::optional<float> val) {
-        if (val) g_gamepad_sensitivity = std::max(0.0f, val.value());
-        rf::console::print("Gamepad sensitivity: {:.4f}", g_gamepad_sensitivity);
+        if (val) g_gamepad_joy_sensitivity = std::max(0.0f, val.value());
+        rf::console::print("Gamepad sensitivity: {:.4f}", g_gamepad_joy_sensitivity);
     },
     "Set gamepad look sensitivity (default 5.0)",
-    "gp_sens [value]",
+    "joy_sens [value]",
 };
 
-ConsoleCommand2 gp_deadzone_cmd{
-    "gp_deadzone",
+ConsoleCommand2 joy_deadzone_cmd{
+    "joy_deadzone",
     [](std::optional<float> val) {
         if (val) g_deadzone = std::clamp(val.value(), 0.0f, 0.9f);
         rf::console::print("Gamepad stick deadzone: {:.2f}", g_deadzone);
     },
     "Set gamepad stick deadzone 0.0-0.9 (default 0.25)",
-    "gp_deadzone [value]",
+    "joy_deadzone [value]",
 };
 
 void gamepad_apply_patch()
@@ -222,7 +221,7 @@ void gamepad_apply_patch()
     mouse_get_delta_hook.install();
     control_is_control_down_hook.install();
     control_config_check_pressed_hook.install();
-    gp_sens_cmd.register_cmd();
-    gp_deadzone_cmd.register_cmd();
+    joy_sens_cmd.register_cmd();
+    joy_deadzone_cmd.register_cmd();
     xlog::info("Gamepad support initialized");
 }
