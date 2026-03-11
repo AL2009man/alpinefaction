@@ -299,8 +299,6 @@ CodeInjection camera_angle_injection{
 
         float new_pitch_non_lin;
         if (g_alpine_game_config.mouse_linear_pitch) {
-            // Convert current non-linear pitch to linear space, apply delta there,
-            // then convert back — this avoids the slowdown near ±90°
             float current_pitch_non_lin = entity->control_data.eye_phb.x;
             auto fvec = fw_vector_from_non_linear_yaw_pitch(entity->control_data.phb.y, current_pitch_non_lin);
             float current_pitch_lin = linear_pitch_from_forward_vector(fvec);
