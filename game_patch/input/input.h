@@ -9,3 +9,4 @@ void mouse_init_sdl_window();
 void mouse_sdl_poll();
 void sdl_input_poll();
 void key_apply_patch();
+void set_sdl_mouse_enabled(bool enabled);
