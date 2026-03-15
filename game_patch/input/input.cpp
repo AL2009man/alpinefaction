@@ -1,5 +1,4 @@
 // Central SDL event pump for all input subsystems.
-// Handles mouse motion and keyboard text input, routing each to the appropriate module.
 #include <SDL3/SDL.h>
 #include "input.h"
 
