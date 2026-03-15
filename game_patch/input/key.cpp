@@ -1,4 +1,3 @@
-#include <cctype>
 #include <SDL3/SDL.h>
 #include <patch_common/FunHook.h>
 #include <patch_common/CodeInjection.h>
@@ -45,22 +44,26 @@ rf::ControlConfigAction get_af_control(rf::AlpineControlConfigAction alpine_cont
     return static_cast<rf::ControlConfigAction>(starting_alpine_control_index + static_cast<int>(alpine_control));
 }
 
+static SDL_Scancode rf_key_to_sdl_scancode(int key); // defined below
+
 FunHook<int(int16_t)> key_to_ascii_hook{
     0x0051EFC0,
     [](int16_t key) {
         using namespace rf;
         constexpr int empty_result = 0xFF;
-        if (!key) {
+        if (!key)
             return empty_result;
-        }
-        // special handling for Num Lock (because ToAscii API does not support it)
+
+        // Ctrl+key: game doesn't use control characters for text input
+        if (key & KEY_CTRLED)
+            return empty_result;
+
+        // Numpad: SDL keycodes for KP_x are not printable chars, handle explicitly
         switch (key & KEY_MASK) {
-            // Numpad keys that always work
             case KEY_PADMULTIPLY: return static_cast<int>('*');
-            case KEY_PADMINUS: return static_cast<int>('-');
-            case KEY_PADPLUS: return static_cast<int>('+');
-            // Disable Numpad Enter key because game is not prepared for getting new line character from this function
-            case KEY_PADENTER: return empty_result;
+            case KEY_PADMINUS:    return static_cast<int>('-');
+            case KEY_PADPLUS:     return static_cast<int>('+');
+            case KEY_PADENTER:    return empty_result; // game not prepared for newline from numpad
         }
         if (GetKeyState(VK_NUMLOCK) & 1) {
             switch (key & KEY_MASK) {
@@ -77,38 +80,21 @@ FunHook<int(int16_t)> key_to_ascii_hook{
                 case KEY_PADPERIOD: return static_cast<int>('.');
             }
         }
-        BYTE key_state[256] = {0};
-        if (key & KEY_SHIFTED) {
-            key_state[VK_SHIFT] = 0x80;
-        }
-        if (key & KEY_ALTED) {
-            key_state[VK_MENU] = 0x80;
-        }
-        if (key & KEY_CTRLED) {
-            key_state[VK_CONTROL] = 0x80;
-        }
-        int scan_code = key & 0x7F;
-        auto vk = MapVirtualKeyA(scan_code, MAPVK_VSC_TO_VK);
-        WCHAR unicode_chars[3];
-        auto num_unicode_chars = ToUnicode(vk, scan_code, key_state, unicode_chars, std::size(unicode_chars), 0);
-        if (num_unicode_chars < 1) {
+
+        // Use SDL for layout-aware translation (handles non-US keyboards and Wine correctly)
+        SDL_Scancode sc = rf_key_to_sdl_scancode(key);
+        if (sc == SDL_SCANCODE_UNKNOWN)
             return empty_result;
-        }
-        char ansi_char;
-#if 0 // Windows-1252 codepage support - disabled because callers of this function expects ASCII
-        int num_ansi_chars = WideCharToMultiByte(1252, 0, unicode_chars, num_unicode_chars,
-            &ansi_char, sizeof(ansi_char), nullptr, nullptr);
-        if (num_ansi_chars == 0) {
+
+        SDL_Keymod mods = SDL_KMOD_NONE;
+        if (key & KEY_SHIFTED) mods |= SDL_KMOD_SHIFT;
+        if (key & KEY_ALTED)   mods |= SDL_KMOD_RALT; // AltGr on most non-US layouts
+
+        SDL_Keycode kc = SDL_GetKeyFromScancode(sc, mods, false);
+        if (kc == SDLK_UNKNOWN || kc < 0x20 || kc > 0x7E)
             return empty_result;
-        }
-#else
-        if (static_cast<char16_t>(unicode_chars[0]) >= 0x80 || !std::isprint(unicode_chars[0])) {
-            return empty_result;
-        }
-        ansi_char = static_cast<char>(unicode_chars[0]);
-#endif
-        xlog::trace("vk {:x} ({}) char {}", vk, vk, ansi_char);
-        return static_cast<int>(ansi_char);
+
+        return static_cast<int>(kc);
     },
 };
 

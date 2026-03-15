@@ -307,16 +307,15 @@ ConsoleCommand2 linear_pitch_cmd{
     "Toggles mouse linear pitch angle",
 };
 
-void mouse_sdl_poll()
+void mouse_on_sdl_motion(float xrel, float yrel)
 {
-    if (!g_sdl_window) return;
-    SDL_Event ev;
-    while (SDL_PollEvent(&ev)) {
-        if (ev.type == SDL_EVENT_MOUSE_MOTION) {
-            g_sdl_mouse_dx_rem += ev.motion.xrel;
-            g_sdl_mouse_dy_rem += ev.motion.yrel;
-        }
-    }
+    g_sdl_mouse_dx_rem += xrel;
+    g_sdl_mouse_dy_rem += yrel;
+}
+
+SDL_Window* mouse_get_sdl_window()
+{
+    return g_sdl_window;
 }
 
 void mouse_init_sdl_window()
@@ -325,8 +324,11 @@ void mouse_init_sdl_window()
     SDL_SetPointerProperty(props, SDL_PROP_WINDOW_CREATE_WIN32_HWND_POINTER, rf::main_wnd);
     g_sdl_window = SDL_CreateWindowWithProperties(props);
     SDL_DestroyProperties(props);
-    if (!g_sdl_window)
+    if (!g_sdl_window) {
         xlog::error("SDL_CreateWindowWithProperties failed: {}", SDL_GetError());
+        return;
+    }
+    SDL_StartTextInput(g_sdl_window);
 }
 
 void mouse_apply_patch()

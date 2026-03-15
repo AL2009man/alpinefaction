@@ -28,7 +28,7 @@ FunHook<void()> os_poll_hook{
             // xlog::info("msg {}\n", msg.message);
         }
 
-        mouse_sdl_poll();
+        sdl_input_poll();
 
         if (win32_console_is_enabled()) {
             win32_console_poll_input();
