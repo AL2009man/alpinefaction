@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <SDL3/SDL.h>
 #include <patch_common/FunHook.h>
 #include <patch_common/AsmWriter.h>
 #include <xlog/xlog.h>
@@ -7,11 +8,15 @@
 #include "../rf/input.h"
 #include "../rf/crt.h"
 #include "../main/main.h"
+#include "../input/input.h"
+#include "../misc/alpine_settings.h"
 #include "win32_console.h"
 #include "../input/input.h"
 #include <xlog/xlog.h>
 #include <timeapi.h>
 #include "os.h"
+
+const char* get_win_msg_name(UINT msg);
 
 FunHook<void()> os_poll_hook{
     0x00524B60,
@@ -27,6 +32,13 @@ FunHook<void()> os_poll_hook{
             // xlog::info("msg {}\n", msg.message);
         }
 
+        // Avoid accumulating mouse deltas while the window is unfocused
+        // and background mouse input is disabled, to prevent a large
+        // "dump" of motion on refocus.
+        if (rf::os_foreground() || g_alpine_game_config.background_mouse) {
+            sdl_input_poll();
+        }
+
         if (win32_console_is_enabled()) {
             win32_console_poll_input();
         }
@@ -37,8 +49,7 @@ FunHook<void()> os_poll_hook{
 
 LRESULT WINAPI wnd_proc(HWND wnd_handle, UINT msg, WPARAM w_param, LPARAM l_param)
 {
-    // extern const char* get_win_msg_name(UINT msg);
-    // xlog::trace("{:08x}: msg {} {:x} {:x}", GetTickCount64(), get_win_msg_name(msg), w_param, l_param);
+    // xlog::trace("{:08x}: msg {} {:x} {:x}", GetTickCount(), get_win_msg_name(msg), w_param, l_param);
     if (rf::main_wnd && wnd_handle != rf::main_wnd) {
         xlog::warn("Got unknown window in the window procedure: hwnd {} msg {}",
             static_cast<void*>(wnd_handle), msg);
@@ -51,14 +62,16 @@ LRESULT WINAPI wnd_proc(HWND wnd_handle, UINT msg, WPARAM w_param, LPARAM l_para
     switch (msg) {
     case WM_ACTIVATE:
         if (!rf::is_dedicated_server) {
-            // Show cursor if window is not active
             if (w_param) {
-                ShowCursor(FALSE);
+                SDL_HideCursor();
+                // Drive Win32 counter to exactly -1 (hidden)
                 while (ShowCursor(FALSE) >= 0)
                     ;
             }
             else {
-                ShowCursor(TRUE);
+                SDL_ShowCursor();
+                // Drive Win32 counter to exactly 0 (visible) so external dialogs
+                // (assertions, crash popups) always see the correct cursor state.
                 while (ShowCursor(TRUE) < 0)
                     ;
             }
@@ -102,6 +115,7 @@ static FunHook<void()> os_close_hook{
     []() {
         os_close_hook.call_target();
         win32_console_close();
+        SDL_Quit();
     },
 };
 
@@ -152,7 +166,7 @@ void wait_for(const float ms, const WaitableTimer& timer) {
         }
         Sleep(static_cast<DWORD>(ms));
     } else {
-        // `SetWaitableTimer` requires 100-nanosecond intervals.
+        // SetWaitableTimer requires 100-nanosecond intervals.
         // Negative values indicate relative time.
         LARGE_INTEGER dur{
             .QuadPart = -static_cast<LONGLONG>(static_cast<double>(ms) * 10'000.)
@@ -172,6 +186,17 @@ void wait_for(const float ms, const WaitableTimer& timer) {
 
 void os_apply_patch()
 {
+    // Lock to DPI_AWARENESS_CONTEXT_UNAWARE so the legacy D3D renderer's bitmap-scaling
+    // virtualisation stays active.
+    if (auto* set_dpi_ctx = reinterpret_cast<BOOL(WINAPI*)(HANDLE)>(
+            GetProcAddress(GetModuleHandleA("user32.dll"), "SetProcessDpiAwarenessContext"))) {
+        set_dpi_ctx(reinterpret_cast<HANDLE>(-1)); // DPI_AWARENESS_CONTEXT_UNAWARE
+    }
+
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        xlog::error("SDL_Init(SDL_INIT_VIDEO) failed: {}", SDL_GetError());
+    }
+
     // Process messages in the same thread as DX processing (alternative: D3DCREATE_MULTITHREADED)
     AsmWriter(0x00524C48, 0x00524C83).nop(); // disable msg loop thread
     AsmWriter(0x00524C48).call(0x00524E40);  // os_create_main_window
