@@ -354,13 +354,18 @@ void mouse_sdl_poll()
 {
     if (!g_sdl_window) return;
 
-    float dx = 0.0f;
-    float dy = 0.0f;
-    SDL_GetRelativeMouseState(&dx, &dy); // always drain to prevent buildup
-
-    if (g_alpine_game_config.sdl_mouse) {
-        g_sdl_mouse_dx_rem += dx;
-        g_sdl_mouse_dy_rem += dy;
+    SDL_Event events[16];
+    int n;
+    while ((n = SDL_PeepEvents(events, static_cast<int>(std::size(events)),
+                               SDL_GETEVENT, SDL_EVENT_MOUSE_MOTION,
+                               SDL_EVENT_MOUSE_REMOVED)) > 0) {
+        for (int i = 0; i < n; ++i) {
+            const SDL_Event& ev = events[i];
+            if (ev.type == SDL_EVENT_MOUSE_MOTION && g_alpine_game_config.sdl_mouse) {
+                g_sdl_mouse_dx_rem += ev.motion.xrel;
+                g_sdl_mouse_dy_rem += ev.motion.yrel;
+            }
+        }
     }
 }
 

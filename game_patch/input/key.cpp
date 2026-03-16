@@ -230,9 +230,11 @@ void keyboard_sdl_poll()
     SDL_Event events[16];
     int n;
     while ((n = SDL_PeepEvents(events, static_cast<int>(std::size(events)),
-                               SDL_GETEVENT, SDL_EVENT_KEY_DOWN, SDL_EVENT_KEY_UP)) > 0) {
+                               SDL_GETEVENT, SDL_EVENT_KEY_DOWN, SDL_EVENT_TEXT_EDITING_CANDIDATES)) > 0) {
         for (int i = 0; i < n; ++i) {
             const auto& evt = events[i];
+            if (evt.type != SDL_EVENT_KEY_DOWN && evt.type != SDL_EVENT_KEY_UP)
+                continue; // only key state changes are relevant; discard text editing events
             if (evt.key.repeat)
                 continue; // ignore OS key repeat; RF tracks state itself
             const bool down = (evt.type == SDL_EVENT_KEY_DOWN);
