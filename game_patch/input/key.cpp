@@ -65,7 +65,7 @@ FunHook<int(int16_t)> key_to_ascii_hook{
             case KEY_PADPLUS:     return static_cast<int>('+');
             case KEY_PADENTER:    return empty_result; // game not prepared for newline from numpad
         }
-        if (GetKeyState(VK_NUMLOCK) & 1) {
+        if (SDL_GetModState() & SDL_KMOD_NUM) {
             switch (key & KEY_MASK) {
                 case KEY_PAD7: return static_cast<int>('7');
                 case KEY_PAD8: return static_cast<int>('8');
@@ -207,6 +207,42 @@ static SDL_Scancode rf_key_to_sdl_scancode(int key)
     }
 }
 
+static rf::Key sdl_scancode_to_rf_key(SDL_Scancode sc)
+{
+    static rf::Key table[SDL_SCANCODE_COUNT] = {};
+    static bool built = false;
+    if (!built) {
+        for (int k = 1; k <= static_cast<int>(rf::KEY_MASK); ++k) {
+            SDL_Scancode mapped = rf_key_to_sdl_scancode(k);
+            if (mapped != SDL_SCANCODE_UNKNOWN && table[mapped] == rf::KEY_NONE) {
+                table[mapped] = static_cast<rf::Key>(k);
+            }
+        }
+        built = true;
+    }
+    if (sc == SDL_SCANCODE_UNKNOWN || static_cast<int>(sc) >= SDL_SCANCODE_COUNT)
+        return rf::KEY_NONE;
+    return table[static_cast<int>(sc)];
+}
+
+void keyboard_sdl_poll()
+{
+    SDL_Event events[16];
+    int n;
+    while ((n = SDL_PeepEvents(events, static_cast<int>(std::size(events)),
+                               SDL_GETEVENT, SDL_EVENT_KEY_DOWN, SDL_EVENT_KEY_UP)) > 0) {
+        for (int i = 0; i < n; ++i) {
+            const auto& evt = events[i];
+            if (evt.key.repeat)
+                continue; // ignore OS key repeat; RF tracks state itself
+            const bool down = (evt.type == SDL_EVENT_KEY_DOWN);
+            const rf::Key rf_key = sdl_scancode_to_rf_key(evt.key.scancode);
+            if (rf_key != rf::KEY_NONE)
+                rf::key_process_event(static_cast<int>(rf_key), down ? 1 : 0, 0);
+        }
+    }
+}
+
 int get_key_name(int key, char* buf, size_t buf_len)
 {
     SDL_Scancode sc = rf_key_to_sdl_scancode(key);
@@ -214,7 +250,7 @@ int get_key_name(int key, char* buf, size_t buf_len)
         buf[0] = '\0';
         return 0;
     }
-    const char* name = SDL_GetScancodeName(sc);
+    const char* name = SDL_GetKeyName(SDL_GetKeyFromScancode(sc, SDL_KMOD_NONE, false));
     if (!name || name[0] == '\0') {
         buf[0] = '\0';
         return 0;
@@ -562,15 +598,8 @@ FunHook<void(int, int, int)> key_msg_handler_hook{
             case WM_KEYDOWN:
             case WM_SYSKEYDOWN:
             case WM_KEYUP:
-            case WM_SYSKEYUP: {
-                // For num pads, RF requires `KF_EXTENDED` to be set.
-                if (w_param == VK_PRIOR
-                    || w_param == VK_NEXT
-                    || w_param == VK_END
-                    || w_param == VK_HOME) {
-                    l_param |= KF_EXTENDED << 16;
-                }
-            }
+            case WM_SYSKEYUP:
+                return; // Keyboard events handled via SDL in keyboard_sdl_poll
         }
         key_msg_handler_hook.call_target(msg, w_param, l_param);
     },
@@ -604,6 +633,7 @@ void key_apply_patch()
     // Support suppress autoswitch bind
     item_touch_weapon_autoswitch_patch.install();
 
-    // Num pads need a patch to support `PgUp`, `PgDown`, `End`, and `Home`.
+    // Block Win32 WM_KEY* messages from reaching the RF key handler;
+    // keyboard events are fed to RF via SDL in keyboard_sdl_poll instead.
     key_msg_handler_hook.install();
 }

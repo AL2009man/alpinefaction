@@ -4,5 +4,6 @@
 
 void sdl_input_poll()
 {
+    keyboard_sdl_poll();
     mouse_sdl_poll();
 }

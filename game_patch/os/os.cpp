@@ -57,14 +57,16 @@ LRESULT WINAPI wnd_proc(HWND wnd_handle, UINT msg, WPARAM w_param, LPARAM l_para
     switch (msg) {
     case WM_ACTIVATE:
         if (!rf::is_dedicated_server) {
-            // Show cursor if window is not active
             if (w_param) {
-                ShowCursor(FALSE);
+                SDL_HideCursor();
+                // Drive Win32 counter to exactly -1 (hidden)
                 while (ShowCursor(FALSE) >= 0)
                     ;
             }
             else {
-                ShowCursor(TRUE);
+                SDL_ShowCursor();
+                // Drive Win32 counter to exactly 0 (visible) so external dialogs
+                // (assertions, crash popups) always see the correct cursor state.
                 while (ShowCursor(TRUE) < 0)
                     ;
             }
