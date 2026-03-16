@@ -42,8 +42,6 @@ FunHook<void()> os_poll_hook{
         if (win32_console_is_enabled()) {
             win32_console_poll_input();
         }
-
-        sdl_input_poll();
     },
 };
 
