@@ -4,8 +4,12 @@
 
 rf::ControlConfigAction get_af_control(rf::AlpineControlConfigAction alpine_control);
 rf::String get_action_bind_name(int action);
+void set_sdl_mouse_enabled(bool enabled);
 void mouse_apply_patch();
 void camera_start_reset_to_horizon();
+void mouse_init_sdl_window();
+void mouse_sdl_poll();
+void keyboard_sdl_poll();
 void key_apply_patch();
 void sdl_input_poll();
 void gamepad_apply_patch();

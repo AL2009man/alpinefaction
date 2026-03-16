@@ -4,5 +4,8 @@
 
 void sdl_input_poll()
 {
-    SDL_PumpEvents();
+    if (SDL_IsMainThread())
+        SDL_PumpEvents();
+    keyboard_sdl_poll();
+    mouse_sdl_poll();
 }

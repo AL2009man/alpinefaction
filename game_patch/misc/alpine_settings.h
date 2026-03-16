@@ -135,7 +135,7 @@ struct AlpineGameSettings
     bool display_target_player_names = true;
     bool verbose_time_left_display = true;
     bool nearest_texture_filtering = false;
-    bool direct_input = true;
+    bool sdl_mouse = true;
     float gamepad_joy_sensitivity = 2.5f;
     float gamepad_move_deadzone = 0.25f;
     float gamepad_look_deadzone = 0.15f;

@@ -65,6 +65,9 @@ static bool  g_dpad_nav_active       = false;
 static POINT g_last_cursor_pos       = {-1, -1};
 static bool  g_south_lclick_held     = false;  // WM_LBUTTONDOWN sent but WM_LBUTTONUP not yet sent
 
+// True when the SDL window (and therefore the game) has keyboard focus.
+static bool  g_window_has_focus      = true;
+
 // Normalize an axis value, strip the deadzone band, and rescale the remainder to [-1, 1].
 static float get_axis(SDL_GamepadAxis axis, float deadzone)
 {
@@ -321,13 +324,52 @@ void gamepad_sdl_poll()
 {
     memcpy(g_action_prev, g_action_curr, sizeof(g_action_curr));
     SDL_UpdateGamepads();
-    // Flush SDL Gamepad events outside the gamepad range to prevent queue buildup.
-    // Keyboard and mouse input is handled via Win32 message dispatch and doesn't need flushing.
+    // Flush everything except window events and gamepad events to prevent queue buildup.
     SDL_FlushEvents(SDL_EVENT_FIRST,
+        static_cast<SDL_EventType>(static_cast<Uint32>(SDL_EVENT_WINDOW_FIRST) - 1u));
+    SDL_FlushEvents(
+        static_cast<SDL_EventType>(static_cast<Uint32>(SDL_EVENT_WINDOW_LAST) + 1u),
         static_cast<SDL_EventType>(static_cast<Uint32>(SDL_EVENT_GAMEPAD_AXIS_MOTION) - 1u));
     SDL_FlushEvents(
         static_cast<SDL_EventType>(static_cast<Uint32>(SDL_EVENT_GAMEPAD_STEAM_HANDLE_UPDATED) + 1u),
         SDL_EVENT_LAST);
+
+    // Process window focus events so we can gate input when unfocused.
+    {
+        SDL_Event wevents[8];
+        int n;
+        while ((n = SDL_PeepEvents(wevents, static_cast<int>(std::size(wevents)),
+                                   SDL_GETEVENT, SDL_EVENT_WINDOW_FIRST,
+                                   SDL_EVENT_WINDOW_LAST)) > 0) {
+            for (int i = 0; i < n; ++i) {
+                const SDL_EventType t = static_cast<SDL_EventType>(wevents[i].type);
+                if (t == SDL_EVENT_WINDOW_FOCUS_GAINED) {
+                    g_window_has_focus = true;
+                } else if (t == SDL_EVENT_WINDOW_FOCUS_LOST) {
+                    g_window_has_focus = false;
+                    // Focus lost: release all held gamepad input.
+                    if (g_gamepad) {
+                        release_movement_keys();
+                        for (int b = 0; b < SDL_GAMEPAD_BUTTON_COUNT; ++b)
+                            inject_action_key(g_button_map[b], false);
+                        inject_action_key(g_trigger_action[0], false);
+                        inject_action_key(g_trigger_action[1], false);
+                        if (g_south_lclick_held) {
+                            POINT pt;
+                            GetCursorPos(&pt);
+                            ScreenToClient(rf::main_wnd, &pt);
+                            SendMessage(rf::main_wnd, WM_LBUTTONUP, 0, MAKELPARAM(pt.x, pt.y));
+                            g_south_lclick_held = false;
+                        }
+                    }
+                    g_gyro_x = g_gyro_y = g_gyro_z = 0.0f;
+                    g_accel_x = g_accel_y = g_accel_z = 0.0f;
+                    g_gyro_fresh = false;
+                    memset(g_action_curr, 0, sizeof(g_action_curr));
+                }
+            }
+        }
+    }
     SDL_Event events[16];
     int n;
     while ((n = SDL_PeepEvents(events, static_cast<int>(std::size(events)),
@@ -366,7 +408,7 @@ void gamepad_sdl_poll()
                 break;
             case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
                 if (!g_gamepad || SDL_GetGamepadID(g_gamepad) != ev.gbutton.which) break;
-                if (!rf::is_main_wnd_active) break;
+                if (!g_window_has_focus) break;
                 g_last_input_was_gamepad = true;
                 if (ui_ctrl_bindings_view_active() && rf::ui::options_controls_waiting_for_key) {
                     if (ev.gbutton.button == SDL_GAMEPAD_BUTTON_START) {
@@ -402,7 +444,7 @@ void gamepad_sdl_poll()
                 break;
             case SDL_EVENT_GAMEPAD_BUTTON_UP:
                 if (!g_gamepad || SDL_GetGamepadID(g_gamepad) != ev.gbutton.which) break;
-                if (!rf::is_main_wnd_active) break;
+                if (!g_window_has_focus) break;
                 menu_nav_on_button_up(ev.gbutton.button);
                 if (ev.gbutton.button < SDL_GAMEPAD_BUTTON_COUNT) {
                     int mapped = g_button_map[ev.gbutton.button];
@@ -416,7 +458,7 @@ void gamepad_sdl_poll()
                 break;
             case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
                 if (!g_gamepad || SDL_GetGamepadID(g_gamepad) != ev.gaxis.which) break;
-                if (!rf::is_main_wnd_active) break;
+                if (!g_window_has_focus) break;
                 float v = ev.gaxis.value / static_cast<float>(SDL_MAX_SINT16);
                 float deadzone = 0.0f;
                 switch (static_cast<SDL_GamepadAxis>(ev.gaxis.axis)) {
@@ -441,7 +483,7 @@ void gamepad_sdl_poll()
             }
             case SDL_EVENT_GAMEPAD_SENSOR_UPDATE:
                 if (!g_motion_sensors_active || SDL_GetGamepadID(g_gamepad) != ev.gsensor.which) break;
-                if (!rf::is_main_wnd_active) break; // discard gyro events while app is not focused
+                if (!g_window_has_focus) break; // discard gyro events while app is not focused
                 if (ev.gsensor.sensor == SDL_SENSOR_GYRO) {
                     constexpr float rad2deg = 180.0f / 3.14159265f;
                     g_gyro_x = ev.gsensor.data[0] * rad2deg;
@@ -551,7 +593,7 @@ static void gamepad_do_menu_frame()
 void gamepad_do_frame()
 {
     gamepad_sdl_poll();
-    if (!g_gamepad || !rf::is_main_wnd_active)
+    if (!g_gamepad || !g_window_has_focus)
         return;
         if (ui_ctrl_bindings_view_active() && rf::ui::options_controls_waiting_for_key) {
             float lt = SDL_GetGamepadAxis(g_gamepad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER)  / static_cast<float>(SDL_MAX_SINT16);
@@ -586,7 +628,7 @@ void gamepad_get_camera(float& pitch_delta, float& yaw_delta)
     pitch_delta = 0.0f;
     yaw_delta   = 0.0f;
 
-    if (!g_gamepad || !rf::keep_mouse_centered || !rf::is_main_wnd_active)
+    if (!g_gamepad || !rf::keep_mouse_centered || !g_window_has_focus)
         return;
 
     SDL_GamepadAxis cam_x = g_alpine_game_config.gamepad_swap_sticks ? SDL_GAMEPAD_AXIS_LEFTX  : SDL_GAMEPAD_AXIS_RIGHTX;
@@ -653,7 +695,7 @@ static bool is_local_player_vehicle(rf::Entity* entity)
 FunHook<void(rf::Entity*)> physics_simulate_entity_hook{
     0x0049F3C0,
     [](rf::Entity* entity) {
-        if (g_gamepad && rf::is_main_wnd_active && entity == rf::local_player_entity && g_move_mag > 0.001f) {
+        if (g_gamepad && g_window_has_focus && entity == rf::local_player_entity && g_move_mag > 0.001f) {
             if (rf::is_multi) {
                 float inv_mag = 1.0f / g_move_mag;
                 entity->ai.ci.move.x = g_move_lx * inv_mag;
@@ -667,7 +709,7 @@ FunHook<void(rf::Entity*)> physics_simulate_entity_hook{
         // Pre-sim: inject gamepad stick + gyro into vehicle rotation input (ci.rot)
         // ci.rot expects values in the range of keyboard input (±1.0).
         // The vehicle's own turn rate and frametime scaling apply on top.
-        if (g_gamepad && rf::is_main_wnd_active && is_local_player_vehicle(entity)) {
+        if (g_gamepad && g_window_has_focus && is_local_player_vehicle(entity)) {
             // Stick: raw axis (-1 to 1) maps directly to keyboard-like input
             SDL_GamepadAxis rot_x = g_alpine_game_config.gamepad_swap_sticks ? SDL_GAMEPAD_AXIS_LEFTX  : SDL_GAMEPAD_AXIS_RIGHTX;
             SDL_GamepadAxis rot_y = g_alpine_game_config.gamepad_swap_sticks ? SDL_GAMEPAD_AXIS_LEFTY  : SDL_GAMEPAD_AXIS_RIGHTY;
