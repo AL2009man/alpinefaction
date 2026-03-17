@@ -1454,6 +1454,40 @@ CodeInjection options_render_alpine_panel_patch{
         int index = rf::ui::options_current_panel;
         //xlog::warn("render index {}", index);
 
+        // Detect falling edge of waiting_for_key to finalize extra mouse button rebinds
+        if (index == 3) {
+            static bool s_was_waiting = false;
+            bool now_waiting = rf::ui::options_controls_waiting_for_key;
+            if (s_was_waiting && !now_waiting) {
+                int xbtn = mouse_take_pending_rebind();
+                if (xbtn >= 0 && rf::local_player) {
+                    auto& cc = rf::local_player->settings.controls;
+                    int n = std::min(cc.num_bindings, 128);
+                    // RF wrote CTRL_REBIND_SENTINEL into some scan_codes slot of the rebound binding.
+                    // Overwrite it with our custom extra-mouse scan code so RF's key layer picks it up naturally.
+                    int16_t new_sc = static_cast<int16_t>(CTRL_EXTRA_MOUSE_SCAN_BASE + (xbtn - 3));
+                    // RF may write the sentinel into scan_codes[0] or scan_codes[1] depending
+                    // on which slot the user was editing; check both.
+                    bool found = false;
+                    for (int i = 0; i < n && !found; ++i) {
+                        for (int slot = 0; slot < 2 && !found; ++slot) {
+                            if (cc.bindings[i].scan_codes[slot] == static_cast<int16_t>(CTRL_REBIND_SENTINEL)) {
+                                // Clear any other binding that already has the same extra-mouse scan code
+                                for (int j = 0; j < n; ++j)
+                                    for (int s = 0; s < 2; ++s)
+                                        if ((j != i || s != slot) && cc.bindings[j].scan_codes[s] == new_sc)
+                                            cc.bindings[j].scan_codes[s] = -1;
+                                cc.bindings[i].scan_codes[slot] = new_sc;
+                                found = true;
+                            }
+                        }
+                    }
+                    rf::key_process_event(CTRL_REBIND_SENTINEL, 0, 0); // release the sentinel key
+                }
+            }
+            s_was_waiting = now_waiting;
+        }
+
         // render alpine options panel
         if (index == 4) {
             alpine_options_panel_do_frame(static_cast<int>(rf::ui::options_animated_offset));

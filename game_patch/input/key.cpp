@@ -11,6 +11,7 @@
 #include "../misc/alpine_settings.h"
 #include "../multi/multi.h"
 #include "../multi/endgame_votes.h"
+#include "input.h"
 #include "../rf/input.h"
 #include "../rf/entity.h"
 #include "../rf/multi.h"
@@ -283,6 +284,12 @@ void keyboard_sdl_poll()
 
 int get_key_name(int key, char* buf, size_t buf_len)
 {
+    // Custom scan codes for extra mouse buttons (Mouse 4+) — valid in all input modes
+    if (key >= CTRL_EXTRA_MOUSE_SCAN_BASE && key < CTRL_EXTRA_MOUSE_SCAN_BASE + CTRL_EXTRA_MOUSE_SCAN_COUNT) {
+        int mouse_num = (key - CTRL_EXTRA_MOUSE_SCAN_BASE) + 4; // 0x75→Mouse 4, 0x76→Mouse 5, ...
+        int n = std::snprintf(buf, buf_len, "Mouse %d", mouse_num);
+        return n > 0 ? n : 0;
+    }
     if (g_alpine_game_config.input_mode == 2) {
         // SDL mode: use SDL key names
         SDL_Scancode sc = rf_key_to_sdl_scancode(key);
