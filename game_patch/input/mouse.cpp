@@ -7,6 +7,7 @@
 #include "input.h"
 #include "../os/console.h"
 #include "../rf/input.h"
+#include "../rf/entity.h"
 #include "../rf/os/os.h"
 #include "../rf/gr/gr.h"
 #include "../rf/multi.h"
@@ -23,6 +24,13 @@ static int g_sdl_mouse_dx = 0, g_sdl_mouse_dy = 0;
 
 // Extra mouse button rebind state (Mouse 4-8, used with SDL input mode)
 static int g_pending_mouse_extra_btn_rebind = -1;
+
+// Per-frame raw mouse deltas captured for centralized camera angle computation.
+// Populated by mouse_get_delta_hook during gameplay; consumed by mouse_get_camera.
+static int g_camera_mouse_dx = 0, g_camera_mouse_dy = 0;
+
+// Sub-pixel remainder accumulators for vehicle mouse sensitivity scaling.
+static float g_vehicle_mouse_dx_rem = 0.0f, g_vehicle_mouse_dy_rem = 0.0f;
 
 static float scope_sensitivity_value = 0.25f;
 static float scanner_sensitivity_value = 0.25f;
@@ -207,6 +215,27 @@ FunHook<void(int&, int&, int&)> mouse_get_delta_hook{
             g_sdl_mouse_dx = 0;
             g_sdl_mouse_dy = 0;
         }
+        // In gameplay, capture raw deltas for centralized camera angle computation
+        // and zero them so RF does not apply its own sensitivity scaling to camera rotation.
+        // Skip when the player is inside a vehicle: RF must receive the raw deltas to steer it.
+        bool in_vehicle = rf::local_player_entity && rf::entity_in_vehicle(rf::local_player_entity);
+        if (rf::keep_mouse_centered && !in_vehicle) {
+            g_camera_mouse_dx += dx;
+            g_camera_mouse_dy += dy;
+            dx = 0;
+            dy = 0;
+        } else if (rf::keep_mouse_centered && in_vehicle) {
+            // RF uses dx/dy directly for vehicle steering; scale down to stay consistent
+            // with the Quake/Source-formula camera feel. Use a sub-pixel remainder
+            // accumulator so small deltas aren't lost to integer truncation.
+            constexpr float vehicle_sens_scale = 0.08f; // old_default(0.2) / new_default(2.5)
+            g_vehicle_mouse_dx_rem += dx * vehicle_sens_scale;
+            g_vehicle_mouse_dy_rem += dy * vehicle_sens_scale;
+            dx = static_cast<int>(g_vehicle_mouse_dx_rem);
+            dy = static_cast<int>(g_vehicle_mouse_dy_rem);
+            g_vehicle_mouse_dx_rem -= dx;
+            g_vehicle_mouse_dy_rem -= dy;
+        }
     },
 };
 
@@ -225,13 +254,12 @@ ConsoleCommand2 ms_cmd{
     "ms",
     [](std::optional<float> value_opt) {
         if (value_opt) {
-            float value = value_opt.value();
-            value = std::clamp(value, 0.0f, 1.0f);
+            float value = std::max(value_opt.value(), 0.0f);
             rf::local_player->settings.controls.mouse_sensitivity = value;
         }
         rf::console::print("Mouse sensitivity: {:.4f}", rf::local_player->settings.controls.mouse_sensitivity);
     },
-    "Sets mouse sensitivity",
+    "Sets mouse sensitivity (Quake/Source-style: 0.022 deg/pixel * sensitivity)",
     "ms <value>",
 };
 
@@ -386,6 +414,25 @@ void mouse_init_sdl_window()
         xlog::error("SDL_CreateWindowWithProperties failed: {}", SDL_GetError());
         return;
     }
+}
+
+// Converts the per-frame raw mouse pixel deltas captured by mouse_get_delta_hook
+// into camera angle deltas (radians) using a Quake/Source-style sensitivity formula:
+//   angle = raw_pixels * mouse_sensitivity * 0.022 deg/pixel * deg2rad
+// Called from camera.cpp's centralized camera injection point.
+void mouse_get_camera(float& pitch_delta, float& yaw_delta)
+{
+    pitch_delta = 0.0f;
+    yaw_delta   = 0.0f;
+    if (!rf::local_player || !rf::keep_mouse_centered)
+        return;
+    float sens = rf::local_player->settings.controls.mouse_sensitivity;
+    // 0.022 degrees per pixel matches Quake/Source engine mouse scale.
+    constexpr float mouse_scale = 0.022f * (3.14159265f / 180.0f);
+    pitch_delta = -static_cast<float>(g_camera_mouse_dy) * sens * mouse_scale;
+    yaw_delta   =  static_cast<float>(g_camera_mouse_dx) * sens * mouse_scale;
+    g_camera_mouse_dx = 0;
+    g_camera_mouse_dy = 0;
 }
 
 void mouse_apply_patch()

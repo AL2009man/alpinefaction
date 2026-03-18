@@ -364,26 +364,34 @@ static float convert_pitch_delta_to_non_linear_space(
     return new_pitch_delta;
 }
 
+// Applies mouse camera rotation and linear pitch correction at the entity control
+// injection point. Mouse angles are computed by mouse_get_camera (Quake/Source-style
+// formula) rather than by RF's own sensitivity pipeline.
 CodeInjection linear_pitch_patch{
     0x0049DEC9,
     [](const auto& regs) {
-        if (!g_alpine_game_config.mouse_linear_pitch) {
-            return;
-        }
         float& pitch_delta = addr_as_ref<float>(regs.esp + 0x44 - 0x34);
-        if (pitch_delta == .0f) {
-            return;
+        float& yaw_delta   = addr_as_ref<float>(regs.esp + 0x44 + 0x4);
+
+        // Mouse camera contribution: raw pixel deltas converted to radians.
+        // RF's own mouse sensitivity was zeroed in mouse_get_delta_hook.
+        float mouse_pitch = 0.0f, mouse_yaw = 0.0f;
+        mouse_get_camera(mouse_pitch, mouse_yaw);
+        pitch_delta += mouse_pitch;
+        yaw_delta   += mouse_yaw;
+
+        // Apply linear pitch correction to the combined delta.
+        if (g_alpine_game_config.mouse_linear_pitch && pitch_delta != 0.0f) {
+            const rf::Entity* const entity = regs.esi;
+            const float current_yaw = entity->control_data.phb.y;
+            const float current_pitch_non_lin = entity->control_data.eye_phb.x;
+            pitch_delta = convert_pitch_delta_to_non_linear_space(
+                current_yaw,
+                current_pitch_non_lin,
+                pitch_delta,
+                yaw_delta
+            );
         }
-        const rf::Entity* const entity = regs.esi;
-        const float current_yaw = entity->control_data.phb.y;
-        const float current_pitch_non_lin = entity->control_data.eye_phb.x;
-        const float yaw_delta = addr_as_ref<float>(regs.esp + 0x44 + 0x4);
-        pitch_delta = convert_pitch_delta_to_non_linear_space(
-            current_yaw,
-            current_pitch_non_lin,
-            pitch_delta,
-            yaw_delta
-        );
     },
 };
 
