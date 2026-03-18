@@ -383,6 +383,12 @@ CodeInjection linear_pitch_patch{
             yaw_delta   += mouse_yaw;
         }
 
+        // TODO: gamepad camera contribution
+        //   float gamepad_pitch = 0.0f, gamepad_yaw = 0.0f;
+        //   gamepad_get_camera(gamepad_pitch, gamepad_yaw);
+        //   pitch_delta += gamepad_pitch;
+        //   yaw_delta   += gamepad_yaw;
+
         // Apply linear pitch correction to the combined delta.
         if (g_alpine_game_config.mouse_linear_pitch && pitch_delta != 0.0f) {
             const rf::Entity* const entity = regs.esi;

@@ -974,6 +974,10 @@ bool alpine_player_settings_load(rf::Player* player)
         g_alpine_game_config.mouse_linear_pitch = std::stoi(settings["MouseLinearPitch"]);
         processed_keys.insert("MouseLinearPitch");
     }
+    if (settings.count("MouseCameraAngles")) {
+        g_alpine_game_config.mouse_camera_angles = std::stoi(settings["MouseCameraAngles"]);
+        processed_keys.insert("MouseCameraAngles");
+    }
     if (settings.count("SwapARBinds")) {
         g_alpine_game_config.swap_ar_controls = std::stoi(settings["SwapARBinds"]);
         processed_keys.insert("SwapARBinds");
@@ -1071,6 +1075,7 @@ void alpine_control_config_serialize(std::ofstream& file, const rf::ControlConfi
     file << "MouseYInvert=" << cc.axes[1].invert << "\n";
     file << "InputMode=" << g_alpine_game_config.input_mode << "\n";
     file << "MouseLinearPitch=" << g_alpine_game_config.mouse_linear_pitch << "\n";
+    file << "MouseCameraAngles=" << g_alpine_game_config.mouse_camera_angles << "\n";
     file << "SwapARBinds=" << g_alpine_game_config.swap_ar_controls << "\n";
     file << "SwapGNBinds=" << g_alpine_game_config.swap_gn_controls << "\n";
     file << "SwapSGBinds=" << g_alpine_game_config.swap_sg_controls << "\n";
