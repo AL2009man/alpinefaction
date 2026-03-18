@@ -215,11 +215,12 @@ FunHook<void(int&, int&, int&)> mouse_get_delta_hook{
             g_sdl_mouse_dx = 0;
             g_sdl_mouse_dy = 0;
         }
-        // In gameplay, capture raw deltas for centralized camera angle computation
-        // and zero them so RF does not apply its own sensitivity scaling to camera rotation.
-        // Skip when the player is inside a vehicle: RF must receive the raw deltas to steer it.
+        // In gameplay and camera-angles mode: capture raw deltas for centralized angle
+        // computation and zero them so RF does not apply its own sensitivity scaling.
+        // Skip zeroing when in a vehicle (RF needs the deltas to steer) or when camera
+        // angles mode is disabled (RF native scaling handles everything).
         bool in_vehicle = rf::local_player_entity && rf::entity_in_vehicle(rf::local_player_entity);
-        if (rf::keep_mouse_centered && !in_vehicle) {
+        if (rf::keep_mouse_centered && g_alpine_game_config.mouse_camera_angles && !in_vehicle) {
             g_camera_mouse_dx += dx;
             g_camera_mouse_dy += dy;
             dx = 0;
@@ -416,6 +417,20 @@ void mouse_init_sdl_window()
     }
 }
 
+ConsoleCommand2 mouse_camera_angles_cmd{
+    "mouse_camera_scale",
+    [](std::optional<int> value_opt) {
+        if (value_opt) {
+            g_alpine_game_config.mouse_camera_angles = (value_opt.value() != 0);
+        }
+        rf::console::print("mouse_camera_scale: {} ({})",
+            g_alpine_game_config.mouse_camera_angles ? 1 : 0,
+            g_alpine_game_config.mouse_camera_angles ? "Quake/Source formula" : "RF native scaling");
+    },
+    "Sets mouse camera scale mode. 0 = RF native scaling, 1 = Quake/Source 0.022 deg/pixel formula.",
+    "mouse_camera_scale <0|1>",
+};
+
 // Converts the per-frame raw mouse pixel deltas captured by mouse_get_delta_hook
 // into camera angle deltas (radians) using a Quake/Source-style sensitivity formula:
 //   angle = raw_pixels * mouse_sensitivity * 0.022 deg/pixel * deg2rad
@@ -465,4 +480,5 @@ void mouse_apply_patch()
     static_scope_sens_cmd.register_cmd();
     scope_sens_cmd.register_cmd();
     scanner_sens_cmd.register_cmd();
+    mouse_camera_angles_cmd.register_cmd();
 }

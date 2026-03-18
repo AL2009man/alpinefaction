@@ -78,6 +78,7 @@ struct AlpineGameSettings
     bool swap_gn_controls = false;
     bool swap_sg_controls = false;
     bool mouse_linear_pitch = true;
+    bool mouse_camera_angles = true; // use Quake/Source-style angle formula; false = RF native scaling
     bool big_hud = false;
     int skip_cutscene_bind_alias = -1;
     bool try_disable_weapon_shake = false;
