@@ -163,6 +163,13 @@ namespace rf
         {
             return AddrCaller{0x004d0590}.this_call<GSolid*>(this, group_id);
         }
+
+        // Find room containing the given position. hint can be null.
+        // FUN_004cd970: __thiscall, RET 0x10 (4 stack params)
+        GRoom* find_room(GRoom* hint, const Vector3* pos1, const Vector3* pos2, void* param4)
+        {
+            return AddrCaller{0x004CD970}.this_call<GRoom*>(this, hint, pos1, pos2, param4);
+        }
     };
     static_assert(sizeof(GSolid) == 0x378);
 
@@ -519,6 +526,11 @@ namespace rf
 
     static auto& g_cache_clear = addr_as_ref<void()>(0x004F0B90);
     static auto& g_get_room_render_list = addr_as_ref<void(GRoom ***rooms, int *num_rooms)>(0x004D3330);
+
+    // Sky room rendering globals (set by stock engine before sky room render call)
+    static auto& sky_room_center = addr_as_ref<Vector3>(0x0088FB10);
+    static auto& sky_room_offset = addr_as_ref<Vector3>(0x0087BB00);
+    static auto& sky_room_orient = addr_as_ref<Matrix3*>(0x009BB56C);
 
     static auto& g_solid_load_v3d_embedded = addr_as_ref<GSolid*(const char*)>(0x00586E70);
     static auto& g_solid_load_v3d = addr_as_ref<GSolid*(const char*)>(0x00586F5C);
