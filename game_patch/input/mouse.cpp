@@ -15,6 +15,23 @@
 #include "../main/main.h"
 #include "../multi/multi.h"
 
+// SDL window and mouse motion state (used in SDL input mode only)
+static SDL_Window* g_sdl_window = nullptr;
+static bool g_relative_mouse_mode_window_missing_logged = false;
+static float g_sdl_mouse_dx_rem = 0.0f, g_sdl_mouse_dy_rem = 0.0f;
+static int g_sdl_mouse_dx = 0, g_sdl_mouse_dy = 0;
+
+static void reset_sdl_mouse_accumulators()
+{
+    g_sdl_mouse_dx = 0;
+    g_sdl_mouse_dy = 0;
+    g_sdl_mouse_dx_rem = 0.0f;
+    g_sdl_mouse_dy_rem = 0.0f;
+}
+
+// Extra mouse button rebind state (Mouse 4-8, used with SDL input mode)
+static int g_pending_mouse_extra_btn_rebind = -1;
+
 static float scope_sensitivity_value = 0.25f;
 static float scanner_sensitivity_value = 0.25f;
 static float applied_static_sensitivity_value = 0.25f; // value written by AsmWriter
@@ -48,6 +65,48 @@ bool set_direct_input_enabled(bool enabled)
             rf::di_mouse->Acquire();
     }
     return true;
+}
+
+void set_input_mode(int mode)
+{
+    if (mode < 0 || mode > 2) {
+        xlog::warn("set_input_mode: invalid mode {}, clamping to 0..2", mode);
+        mode = std::clamp(mode, 0, 2);
+    }
+
+    const int old_mode = g_alpine_game_config.input_mode;
+    g_alpine_game_config.input_mode = mode;
+
+    // NOTE: SDL cursor visibility/position is used across all modes (because the game
+    // drives the Windows cursor in legacy+DirectInput modes), but SDL's relative mouse
+    // mode (used for camera movement) is only enabled in SDL input mode (2).
+    if (!rf::is_dedicated_server) {
+        // Handle SDL relative mouse mode
+        if (g_sdl_window) {
+            SDL_SetWindowRelativeMouseMode(g_sdl_window, mode == 2 && rf::keep_mouse_centered);
+        }
+
+        // Handle DirectInput transitions
+        if (mode == 1 && rf::keep_mouse_centered) {
+            set_direct_input_enabled(true);
+        } else if (old_mode == 1 && mode != 1) {
+            set_direct_input_enabled(false);
+        }
+    }
+
+    // Clear SDL state when switching input modes to avoid applying stale motion
+    if (old_mode != mode) {
+        reset_sdl_mouse_accumulators();
+    }
+
+    // Release held extra scan codes so they don't stay stuck after mode switch
+    if (old_mode != mode) {
+        for (int i = 0; i < CTRL_EXTRA_MOUSE_SCAN_COUNT; ++i)
+            rf::key_process_event(CTRL_EXTRA_MOUSE_SCAN_BASE + i, 0, 0);
+        for (int i = 0; i < CTRL_EXTRA_KEY_SCAN_COUNT; ++i)
+            rf::key_process_event(CTRL_EXTRA_KEY_SCAN_BASE + i, 0, 0);
+        g_pending_mouse_extra_btn_rebind = -1;
+    }
 }
 
 FunHook<void()> mouse_eval_deltas_hook{
