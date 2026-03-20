@@ -19,6 +19,7 @@
 #include "../rf/misc.h"
 #include "../rf/os/os.h"
 #include "../object/object.h"
+#include "../input/input.h"
 
 #define DEBUG_UI_LAYOUT 0
 #define SHARP_UI_TEXT 1
@@ -89,8 +90,11 @@ static char ao_simdist_butlabel_text[9];
 // alpine options checkboxes and labels
 static rf::ui::Checkbox ao_mpcharlod_cbox;
 static rf::ui::Label ao_mpcharlod_label;
-static rf::ui::Checkbox ao_dinput_cbox;
-static rf::ui::Label ao_dinput_label;
+static rf::ui::Checkbox ao_input_mode_cbox;
+static rf::ui::Label ao_input_mode_label;
+static rf::ui::Label ao_input_mode_butlabel;
+static char ao_input_mode_butlabel_text[16];
+static constexpr const char* input_mode_names[] = {"Classic", "DInput", "SDL"};
 static rf::ui::Checkbox ao_linearpitch_cbox;
 static rf::ui::Label ao_linearpitch_label;
 static rf::ui::Checkbox ao_bighud_cbox;
@@ -544,11 +548,13 @@ void ao_bighud_cbox_on_click(int x, int y) {
     ao_play_button_snd(g_alpine_game_config.big_hud);
 }
 
-void ao_dinput_cbox_on_click(int x, int y)
-{
-    g_alpine_game_config.direct_input = !g_alpine_game_config.direct_input;
-    ao_dinput_cbox.checked = g_alpine_game_config.direct_input;
-    ao_play_button_snd(g_alpine_game_config.direct_input);
+void ao_input_mode_cbox_on_click([[maybe_unused]] int x, [[maybe_unused]] int y) {
+    set_input_mode((g_alpine_game_config.input_mode + 1) % 3);
+    int mode_index = std::clamp(g_alpine_game_config.input_mode, 0, 2);
+    snprintf(ao_input_mode_butlabel_text, sizeof(ao_input_mode_butlabel_text), "%s",
+        input_mode_names[mode_index]);
+    ao_input_mode_butlabel.text = ao_input_mode_butlabel_text;
+    ao_play_button_snd(true);
 }
 
 void ao_linearpitch_cbox_on_click(int x, int y) {
@@ -1200,8 +1206,12 @@ void alpine_options_panel_init() {
         &ao_always_show_spectators_cbox, &ao_always_show_spectators_label, &alpine_options_panel1, ao_always_show_spectators_cbox_on_click, g_alpine_game_config.always_show_spectators, 280, 264, "Show spectators");
 
     // panel 2
-    alpine_options_panel_checkbox_init(
-        &ao_dinput_cbox, &ao_dinput_label, &alpine_options_panel2, ao_dinput_cbox_on_click, g_alpine_game_config.direct_input, 112, 54, "DirectInput"); 
+    alpine_options_panel_inputbox_init(
+        &ao_input_mode_cbox, &ao_input_mode_label, &ao_input_mode_butlabel, &alpine_options_panel2, ao_input_mode_cbox_on_click, 112, 54, "Input mode");
+    int mode_index = std::clamp(g_alpine_game_config.input_mode, 0, 2);
+    snprintf(ao_input_mode_butlabel_text, sizeof(ao_input_mode_butlabel_text), "%s",
+        input_mode_names[mode_index]);
+    ao_input_mode_butlabel.text = ao_input_mode_butlabel_text;
     alpine_options_panel_checkbox_init(
         &ao_linearpitch_cbox, &ao_linearpitch_label, &alpine_options_panel2, ao_linearpitch_cbox_on_click, g_alpine_game_config.mouse_linear_pitch, 112, 84, "Linear pitch");
     alpine_options_panel_checkbox_init(
@@ -1450,6 +1460,42 @@ CodeInjection options_render_alpine_panel_patch{
     []() {
         int index = rf::ui::options_current_panel;
         //xlog::warn("render index {}", index);
+
+        // handle key rebinding in input options panel
+        if (index == 3) {
+            static bool s_was_waiting = false;
+            bool now_waiting = rf::ui::options_controls_waiting_for_key;
+            if (s_was_waiting && !now_waiting) {
+                int16_t new_sc = -1;
+                int xbtn = mouse_take_pending_rebind();
+                if (xbtn >= 0) {
+                    new_sc = static_cast<int16_t>(CTRL_EXTRA_MOUSE_SCAN_BASE + (xbtn - 3));
+                } else {
+                    int extra_key = key_take_pending_extra_rebind();
+                    if (extra_key >= 0)
+                        new_sc = static_cast<int16_t>(extra_key);
+                }
+                if (new_sc >= 0 && rf::local_player) {
+                    auto& cc = rf::local_player->settings.controls;
+                    int n = std::min(cc.num_bindings, 128);
+                    bool found = false;
+                    for (int i = 0; i < n && !found; ++i) {
+                        for (int slot = 0; slot < 2 && !found; ++slot) {
+                            if (cc.bindings[i].scan_codes[slot] == static_cast<int16_t>(CTRL_REBIND_SENTINEL)) {
+                                for (int j = 0; j < n; ++j)
+                                    for (int s = 0; s < 2; ++s)
+                                        if ((j != i || s != slot) && cc.bindings[j].scan_codes[s] == new_sc)
+                                            cc.bindings[j].scan_codes[s] = -1;
+                                cc.bindings[i].scan_codes[slot] = new_sc;
+                                found = true;
+                            }
+                        }
+                    }
+                    rf::key_process_event(CTRL_REBIND_SENTINEL, 0, 0);
+                }
+            }
+            s_was_waiting = now_waiting;
+        }
 
         // render alpine options panel
         if (index == 4) {

@@ -97,6 +97,7 @@ set(SRCS
     graphics/d3d11/gr_d3d11_hooks.cpp
     graphics/d3d11/gr_d3d11_hooks.h
     input/input.h
+    input/input.cpp
     input/mouse.cpp
     input/key.cpp
     hud/hud_colors.cpp
@@ -328,7 +329,12 @@ target_link_libraries(AlpineFaction
     freetype
     stb_vorbis
     SDL3::SDL3-static
-    setupapi
-    imm32
-    cfgmgr32
 )
+
+if(WIN32)
+    target_link_libraries(AlpineFaction
+        setupapi
+        imm32
+        cfgmgr32
+    )
+endif()

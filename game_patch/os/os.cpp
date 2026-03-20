@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <SDL3/SDL.h>
 #include <cwchar>
 #include <cwctype>
 #include <patch_common/FunHook.h>
@@ -7,6 +8,7 @@
 #include "../rf/os/os.h"
 #include "../rf/multi.h"
 #include "../rf/input.h"
+#include "../input/input.h"
 #include "../rf/crt.h"
 #include "../main/main.h"
 #include "../multi/multi.h"
@@ -16,6 +18,8 @@
 #include <timeapi.h>
 
 const char* get_win_msg_name(UINT msg);
+
+static bool g_sdl_video_initialized = false;
 
 FunHook<void()> os_poll_hook{
     0x00524B60,
@@ -33,6 +37,13 @@ FunHook<void()> os_poll_hook{
 
         if (win32_console_is_enabled()) {
             win32_console_poll_input();
+        }
+
+        // Always pump SDL events to avoid a backlog even when the
+        // window is unfocused; lower-level input handling is responsible
+        // for ignoring or clamping deltas when background input is disabled.
+        if (g_sdl_video_initialized) {
+            sdl_input_poll();
         }
     },
 };
@@ -63,11 +74,17 @@ LRESULT WINAPI wnd_proc(HWND wnd_handle, UINT msg, WPARAM w_param, LPARAM l_para
         if (!rf::is_dedicated_server) {
             // Show cursor if window is not active
             if (w_param) {
+                if (g_sdl_video_initialized) {
+                    SDL_HideCursor();
+                }
                 ShowCursor(FALSE);
                 while (ShowCursor(FALSE) >= 0)
                     ;
             }
             else {
+                if (g_sdl_video_initialized) {
+                    SDL_ShowCursor();
+                }
                 ShowCursor(TRUE);
                 while (ShowCursor(TRUE) < 0)
                     ;
@@ -308,6 +325,21 @@ void wait_for(const float ms, const WaitableTimer& timer) {
 
 void os_apply_patch()
 {
+    // Lock to DPI_AWARENESS_CONTEXT_UNAWARE so the legacy D3D renderer's bitmap-scaling
+    // virtualisation stays active.
+    if (auto* set_dpi_ctx = reinterpret_cast<BOOL(WINAPI*)(HANDLE)>(
+            GetProcAddress(GetModuleHandleA("user32.dll"), "SetProcessDpiAwarenessContext"))) {
+        set_dpi_ctx(reinterpret_cast<HANDLE>(-1)); // DPI_AWARENESS_CONTEXT_UNAWARE
+    }
+
+    if (!rf::is_dedicated_server) {
+        if (SDL_Init(SDL_INIT_VIDEO)) {
+            g_sdl_video_initialized = true;
+        } else {
+            xlog::error("SDL_Init(SDL_INIT_VIDEO) failed: {}", SDL_GetError());
+        }
+    }
+
     // Process messages in the same thread as DX processing (alternative: D3DCREATE_MULTITHREADED)
     AsmWriter(0x00524C48, 0x00524C83).nop(); // disable msg loop thread
     AsmWriter(0x00524C48).call(0x00524E40);  // os_create_main_window
