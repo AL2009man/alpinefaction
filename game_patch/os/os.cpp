@@ -9,6 +9,7 @@
 #include "../rf/multi.h"
 #include "../rf/input.h"
 #include "../input/input.h"
+#include "../misc/alpine_settings.h"
 #include "../rf/crt.h"
 #include "../main/main.h"
 #include "../multi/multi.h"
@@ -255,6 +256,7 @@ static FunHook<void()> os_close_hook{
     []() {
         os_close_hook.call_target();
         win32_console_close();
+        SDL_Quit();
     },
 };
 
@@ -305,7 +307,7 @@ void wait_for(const float ms, const WaitableTimer& timer) {
         }
         Sleep(static_cast<DWORD>(ms));
     } else {
-        // `SetWaitableTimer` requires 100-nanosecond intervals.
+        // SetWaitableTimer requires 100-nanosecond intervals.
         // Negative values indicate relative time.
         LARGE_INTEGER dur{
             .QuadPart = -static_cast<LONGLONG>(static_cast<double>(ms) * 10'000.)

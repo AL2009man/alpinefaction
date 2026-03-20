@@ -627,4 +627,3 @@ void mouse_apply_patch()
     scanner_sens_cmd.register_cmd();
     linear_pitch_cmd.register_cmd();
 }
-
