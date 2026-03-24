@@ -296,6 +296,11 @@ static void update_stick_movement()
         return;
     }
 
+    if (rf::local_player_entity && rf::entity_is_dying(rf::local_player_entity)) {
+        release_movement_keys();
+        return;
+    }
+
     SDL_GamepadAxis mov_x = g_alpine_game_config.gamepad_swap_sticks ? SDL_GAMEPAD_AXIS_RIGHTX : SDL_GAMEPAD_AXIS_LEFTX;
     SDL_GamepadAxis mov_y = g_alpine_game_config.gamepad_swap_sticks ? SDL_GAMEPAD_AXIS_RIGHTY : SDL_GAMEPAD_AXIS_LEFTY;
     float mov_dz          = g_alpine_game_config.gamepad_swap_sticks ? g_alpine_game_config.gamepad_look_deadzone
@@ -677,7 +682,7 @@ void gamepad_get_camera(float& pitch_delta, float& yaw_delta)
     pitch_delta = 0.0f;
     yaw_delta   = 0.0f;
 
-    if (!is_gamepad_input_active() || !rf::keep_mouse_centered)
+    if (!is_gamepad_input_active() || !rf::keep_mouse_centered || !rf::local_player_entity || rf::entity_is_dying(rf::local_player_entity))
         return;
 
     SDL_GamepadAxis cam_x = g_alpine_game_config.gamepad_swap_sticks ? SDL_GAMEPAD_AXIS_LEFTX  : SDL_GAMEPAD_AXIS_RIGHTX;
@@ -817,7 +822,10 @@ static bool is_local_player_vehicle(rf::Entity* entity)
 FunHook<void(rf::Entity*)> physics_simulate_entity_hook{
     0x0049F3C0,
     [](rf::Entity* entity) {
-        if (is_gamepad_input_active() && entity == rf::local_player_entity && g_move_mag > 0.001f) {
+        if (entity == rf::local_player_entity && rf::entity_is_dying(entity)) {
+            entity->ai.ci.move.x = 0.0f;
+            entity->ai.ci.move.z = 0.0f;
+        } else if (is_gamepad_input_active() && entity == rf::local_player_entity && g_move_mag > 0.001f) {
             if (rf::is_multi) {
                 float inv_mag = 1.0f / g_move_mag;
                 entity->ai.ci.move.x = g_move_lx * inv_mag;
