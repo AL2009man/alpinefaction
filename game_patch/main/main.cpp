@@ -44,6 +44,7 @@
 #include "../object/alpine_corona.h"
 #include "../input/input.h"
 #include "../input/gamepad.h"
+#include "../os/sdl_dynapi.h"
 #include "../rf/gr/gr.h"
 #include "../rf/multi.h"
 #include "../rf/level.h"
@@ -79,6 +80,7 @@ CallHook<void()> rf_init_hook{
         rf_init_hook.call_target();
         vpackfile_disable_overriding();
         xlog::info("Game initialized ({} ms).", GetTickCount64() - start_ticks);
+        sdl_dynapi_init();
         gamepad_sdl_init();
     },
 };

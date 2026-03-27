@@ -217,6 +217,8 @@ set(SRCS
     os/win32_console.cpp
     os/os.cpp
     os/os.h
+    os/sdl_dynapi.cpp
+    os/sdl_dynapi.h
     object/object.h
     object/mover.h
     object/object_private.h
