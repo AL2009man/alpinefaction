@@ -40,6 +40,14 @@ std::vector<rf::ui::Gadget*> alpine_options_panel_settings;
 std::vector<rf::ui::Label*> alpine_options_panel_labels;
 std::vector<rf::ui::Label*> alpine_options_panel_tab_labels;
 
+// scroll state and content-area bounds for the scrollable settings panels
+static int  alpine_options_scroll_offsets[4]  = {0, 0, 0, 0};
+// per-tab scroll opt-in: set to true to enable scroll for that tab (Visual=0, Interface=1, Input=2, Misc=3)
+static bool alpine_options_panel_scrollable[4] = {false, false, false, false};
+static constexpr int AO_CONTENT_TOP    = 44;   // top of scrollable area in sub-panel coords
+static constexpr int AO_CONTENT_BOTTOM = 344;  // bottom of scrollable area (above panel border)
+static constexpr int AO_SCROLL_STEP    = 30;   // pixels per scroll step
+
 // alpine options tabs
 static rf::ui::Checkbox ao_tab_0_cbox;
 static rf::ui::Label ao_tab_0_label;
@@ -1005,6 +1013,37 @@ void ao_enemybullets_cbox_on_click(int x, int y) {
     ao_play_button_snd(g_alpine_game_config.show_enemy_bullets);
 }
 
+static rf::ui::Panel* ao_get_active_subpanel()
+{
+    switch (alpine_options_panel_current_tab) {
+    case 0: return &alpine_options_panel0;
+    case 1: return &alpine_options_panel1;
+    case 2: return &alpine_options_panel2;
+    case 3: return &alpine_options_panel3;
+    default: return nullptr;
+    }
+}
+
+// Returns how many pixels of scroll are possible for a given sub-panel,
+// based on the lowest gadget it contains versus the visible content window.
+static int ao_compute_max_scroll(rf::ui::Panel* subpanel)
+{
+    if (!subpanel) return 0;
+    int max_bottom = 0;
+    for (auto* g : alpine_options_panel_settings) {
+        if (g && g->enabled && g->parent == subpanel)
+            max_bottom = std::max(max_bottom, g->y + g->h);
+    }
+    // also account for label-only content (e.g. fflink labels in panel 3)
+    for (auto* l : alpine_options_panel_labels) {
+        if (l && l->enabled && l->parent == subpanel)
+            max_bottom = std::max(max_bottom, l->y + l->h);
+    }
+    // snap to row grid so the item layout is symmetric at both scroll extremes
+    int raw_max = std::max(0, max_bottom - AO_CONTENT_BOTTOM);
+    return (raw_max / AO_SCROLL_STEP) * AO_SCROLL_STEP;
+}
+
 void alpine_options_panel_handle_key(rf::Key* key){
     // todo: more key support (tab, etc.)
     // close panel on escape
@@ -1016,19 +1055,33 @@ void alpine_options_panel_handle_key(rf::Key* key){
 }
 
 void alpine_options_panel_handle_mouse(int x, int y) {
+    // handle mouse wheel scrolling
+    {
+        int dx = 0, dy = 0, dz = 0;
+        rf::mouse_get_delta(dx, dy, dz);
+        if (dz != 0 && alpine_options_panel_scrollable[alpine_options_panel_current_tab]) {
+            const int tab = alpine_options_panel_current_tab;
+            int step = (dz > 0) ? -AO_SCROLL_STEP : AO_SCROLL_STEP;
+            int max_scroll = ao_compute_max_scroll(ao_get_active_subpanel());
+            alpine_options_scroll_offsets[tab] = std::clamp(alpine_options_scroll_offsets[tab] + step, 0, max_scroll);
+        }
+    }
+
+    rf::ui::Panel* active_subpanel = ao_get_active_subpanel();
+    int current_scroll = alpine_options_scroll_offsets[alpine_options_panel_current_tab];
+
     int hovered_index = -1;
     //xlog::warn("handling mouse {}, {}", x, y);
 
-    // Check which gadget is being hovered over
+    // Check which gadget is being hovered over (accounting for scroll offset)
     for (size_t i = 0; i < alpine_options_panel_settings.size(); ++i) {
         auto* gadget = alpine_options_panel_settings[i];
         if (gadget && gadget->enabled) {
+            int scroll_adj = (active_subpanel && gadget->parent == active_subpanel) ? current_scroll : 0;   
             int abs_x = static_cast<int>(gadget->get_absolute_x() * rf::ui::scale_x);
-            int abs_y = static_cast<int>(gadget->get_absolute_y() * rf::ui::scale_y);
+            int abs_y = static_cast<int>((gadget->get_absolute_y() - scroll_adj) * rf::ui::scale_y);
             int abs_w = static_cast<int>(gadget->w * rf::ui::scale_x);
             int abs_h = static_cast<int>(gadget->h * rf::ui::scale_y);
-
-            //xlog::warn("Checking gadget {} at ({}, {}) size ({}, {})", i, abs_x, abs_y, abs_w, abs_h);
 
             if (x >= abs_x && x <= abs_x + abs_w &&
                 y >= abs_y && y <= abs_y + abs_h) {
@@ -1117,6 +1170,9 @@ void alpine_options_panel_tab_init(rf::ui::Checkbox* tab_button, rf::ui::Label* 
 }
 
 void alpine_options_panel_init() {
+    // reset per-tab scroll positions whenever the panel is (re-)opened
+    std::fill(std::begin(alpine_options_scroll_offsets), std::end(alpine_options_scroll_offsets), 0);
+
     // panels
     alpine_options_panel.create("alpine_options_panelp.tga", rf::ui::options_panel_x, rf::ui::options_panel_y);
     alpine_options_panel0.create("alpine_options_panel0.tga", 0, 0);
@@ -1326,11 +1382,24 @@ void alpine_options_panel_do_frame(int x)
         break;
     }
 
-    // render dynamic elements across all panels
+    // prepare scroll state for this frame
+    rf::ui::Panel* active_subpanel = ao_get_active_subpanel();
+    int& current_scroll = alpine_options_scroll_offsets[alpine_options_panel_current_tab];
+
+    // render all gadgets – tab buttons are unscrolled; content items get a Y offset
     for (auto* ui_element : alpine_options_panel_settings) {
         if (ui_element) {
             auto checkbox = static_cast<rf::ui::Checkbox*>(ui_element);
-            if (checkbox) {
+            if (!checkbox || !checkbox->enabled) continue;
+            if (checkbox->parent == active_subpanel) {
+                // skip items whose top edge is outside the content viewport
+                int scrolled_y = checkbox->y - current_scroll;
+                if (scrolled_y < AO_CONTENT_TOP || scrolled_y >= AO_CONTENT_BOTTOM)
+                    continue;
+                checkbox->y = scrolled_y;
+                checkbox->render();
+                checkbox->y = scrolled_y + current_scroll;
+            } else {
                 checkbox->render();
             }
         }
@@ -1390,11 +1459,54 @@ void alpine_options_panel_do_frame(int x)
         meshlight_mode_names[std::clamp(g_alpine_game_config.mesh_lighting_mode, 0, 2)]);
     ao_meshlight_butlabel.text = ao_meshlight_butlabel_text;
 
-    // render button labels
+    // clamp scroll after all dynamic layout passes have updated item positions
+    const int max_scroll = ao_compute_max_scroll(active_subpanel);
+    current_scroll = std::clamp(current_scroll, 0, max_scroll);
+
+    // render button labels; content labels get the same Y scroll offset applied
     for (auto* ui_label : alpine_options_panel_labels) {
-        if (ui_label) {
+        if (!ui_label || !ui_label->enabled) continue;
+        if (active_subpanel && ui_label->parent == active_subpanel) {
+            int scrolled_y = ui_label->y - current_scroll;
+            if (scrolled_y < AO_CONTENT_TOP || scrolled_y >= AO_CONTENT_BOTTOM)
+                continue;
+            ui_label->y = scrolled_y;
+            ui_label->render();
+            ui_label->y = scrolled_y + current_scroll;
+        } else {
             ui_label->render();
         }
+    }
+
+    // draw scrollbar when this tab is scrollable and there is overflow
+    if (alpine_options_panel_scrollable[alpine_options_panel_current_tab] && max_scroll > 0) {
+        constexpr int sb_width       = 6;    // logical px wide
+        constexpr int sb_margin      = 10;   // logical px from the right edge of the sub-panel
+        constexpr int AO_PANEL_W     = 512;  // all sub-panel TGAs are 512 logical px wide
+        constexpr float viewport_h_l = static_cast<float>(AO_CONTENT_BOTTOM - AO_CONTENT_TOP);
+        const float total_h          = static_cast<float>(max_scroll) + viewport_h_l;
+
+        // x (do_frame param) is the logical x of alpine_options_panel (= animated_offset).
+        // alpine_options_panel.y is the static logical y set at init time.
+        // Sub-panels are at (0,0) relative to the parent, so these give their absolute logical coords.
+        const int sb_x  = static_cast<int>((x + AO_PANEL_W - sb_margin - sb_width) * rf::ui::scale_x);
+        const int sb_y  = static_cast<int>((alpine_options_panel.y + AO_CONTENT_TOP)  * rf::ui::scale_y);
+        const int sb_pw = static_cast<int>(sb_width      * rf::ui::scale_x);
+        const int sb_ph = static_cast<int>(viewport_h_l  * rf::ui::scale_y);
+
+        // track
+        rf::gr::set_color(40, 40, 40, 180);
+        rf::gr::rect(sb_x, sb_y, sb_pw, sb_ph);
+
+        // thumb — proportional height, slides within the track
+        const float thumb_h_f    = viewport_h_l * (viewport_h_l / total_h);
+        const float scroll_ratio = static_cast<float>(current_scroll) / static_cast<float>(max_scroll);
+        const int thumb_y = sb_y + static_cast<int>(scroll_ratio * (sb_ph - thumb_h_f * rf::ui::scale_y));
+        const int thumb_h = std::max(static_cast<int>(4 * rf::ui::scale_y),
+                                     static_cast<int>(thumb_h_f * rf::ui::scale_y));
+
+        rf::gr::set_color(0, 200, 210, 255);
+        rf::gr::rect(sb_x, thumb_y, sb_pw, thumb_h);
     }
 }
 
