@@ -177,6 +177,7 @@ struct AlpineGameSettings
     bool nearest_texture_filtering = false;
     bool direct_input = true;
     float gamepad_joy_sensitivity = 2.5f;
+    float gamepad_trackpad_sensitivity = 180.0f;
     float gamepad_move_deadzone = 0.14f;
     float gamepad_look_deadzone = 0.33f;
     bool gamepad_gyro_enabled = false;

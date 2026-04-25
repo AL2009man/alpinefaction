@@ -83,7 +83,11 @@ struct TouchpadState {
     float last_x = 0.0f;
     float last_y = 0.0f;
 };
-static TouchpadState g_touchpad;
+static TouchpadState g_touchpad;                    // right pad (or only pad) — cursor
+static TouchpadState g_touchpad_left;               // Steam Controller left pad — scroll
+static float         g_touchpad_left_scroll_accum = 0.0f;
+static float         g_touchpad_camera_dx = 0.0f;  // accumulated right-pad camera yaw delta
+static float         g_touchpad_camera_dy = 0.0f;  // accumulated right-pad camera pitch delta
 
 static float g_move_lx = 0.0f, g_move_ly = 0.0f;
 static float g_move_mag = 0.0f;
@@ -181,6 +185,10 @@ static void reset_gamepad_input_state()
     memset(g_flickstick_turn_smooth_buf, 0, sizeof(g_flickstick_turn_smooth_buf));
     g_flickstick_turn_smooth_idx   = 0;
     g_touchpad = {};
+    g_touchpad_left = {};
+    g_touchpad_left_scroll_accum = 0.0f;
+    g_touchpad_camera_dx = 0.0f;
+    g_touchpad_camera_dy = 0.0f;
     g_menu_cursor_accum_x = 0.0f;
     g_menu_cursor_accum_y = 0.0f;
     g_gyro_menu_cursor_active = false;
@@ -499,11 +507,22 @@ static bool menu_nav_on_button_down(int btn)
     case SDL_GAMEPAD_BUTTON_TOUCHPAD:
         menu_nav_handle_confirm();
         return true;
+    case SDL_GAMEPAD_BUTTON_RIGHT_STICK:
+    case SDL_GAMEPAD_BUTTON_LEFT_STICK:
+        if (g_gamepad && SDL_GetNumGamepadTouchpads(g_gamepad) >= 2) {
+            SDL_GamepadButton cursor_click = g_alpine_game_config.gamepad_swap_sticks
+                ? SDL_GAMEPAD_BUTTON_LEFT_STICK : SDL_GAMEPAD_BUTTON_RIGHT_STICK;
+            if (btn == static_cast<int>(cursor_click)) {
+                menu_nav_handle_confirm();
+                return true;
+            }
+        }
+        return false;
     case SDL_GAMEPAD_BUTTON_DPAD_UP:
     case SDL_GAMEPAD_BUTTON_DPAD_DOWN:
     case SDL_GAMEPAD_BUTTON_DPAD_LEFT:
     case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:
-        if (!rf::ui::options_controls_waiting_for_key) {
+        if (!rf::ui::options_controls_waiting_for_key && !g_touchpad_left.active) {
             menu_nav_inject_key(dpad_btn_to_navkey(btn));
             g_menu_nav.last_nav_was_dpad = true;
             g_menu_nav.repeat_btn        = btn;
@@ -521,6 +540,12 @@ static void menu_nav_on_button_up(int btn)
         g_menu_nav.repeat_btn = -1;
     if (btn == static_cast<int>(get_menu_confirm_button()) || btn == SDL_GAMEPAD_BUTTON_TOUCHPAD)
         menu_nav_release_click();
+    if (g_gamepad && SDL_GetNumGamepadTouchpads(g_gamepad) >= 2) {
+        SDL_GamepadButton cursor_click = g_alpine_game_config.gamepad_swap_sticks
+            ? SDL_GAMEPAD_BUTTON_LEFT_STICK : SDL_GAMEPAD_BUTTON_RIGHT_STICK;
+        if (btn == static_cast<int>(cursor_click))
+            menu_nav_release_click();
+    }
 }
 
 static void update_trigger_actions()
@@ -814,43 +839,111 @@ static void handle_gamepad_axis_motion(const SDL_GamepadAxisEvent& ev)
     }
 }
 
+// Resolves which role (cursor or scroll) a touchpad index plays, accounting for
+// device type and stick-swap setting.
+// 2-pad devices (Steam Controller): right pad = cursor + gameplay camera, left pad = scroll.
+//   Swap-sticks flips which physical pad is right vs left.
+// 1-pad devices (DS4/DualSense): pad 0 = cursor for menu navigation only.
+struct TouchpadRoles {
+    bool has_two_pads;
+    bool is_cursor_pad;
+    bool is_scroll_pad;
+};
+
+static TouchpadRoles resolve_touchpad_roles(int touchpad_idx)
+{
+    bool has_two = g_gamepad && SDL_GetNumGamepadTouchpads(g_gamepad) >= 2;
+    int cursor_idx = has_two ? (g_alpine_game_config.gamepad_swap_sticks ? 0 : 1) : 0;
+    int scroll_idx = has_two ? (g_alpine_game_config.gamepad_swap_sticks ? 1 : 0) : -1;
+    return { has_two, touchpad_idx == cursor_idx, has_two && touchpad_idx == scroll_idx };
+}
+
 static void handle_gamepad_touchpad_down(const SDL_GamepadTouchpadEvent& ev)
 {
     if (!is_gamepad_input_active() || SDL_GetGamepadID(g_gamepad) != ev.which) return;
-    if (ev.touchpad != 0 || ev.finger != 0) return; // track primary finger on first touchpad only
+    if (ev.finger != 0) return;
     if (g_message_log_close_cooldown > 0.0f) return;
-    g_touchpad.active = true;
-    g_touchpad.last_x = ev.x;
-    g_touchpad.last_y = ev.y;
-    // Reset accumulator so the first motion event of a new touch starts clean.
-    g_menu_cursor_accum_x = 0.0f;
-    g_menu_cursor_accum_y = 0.0f;
-    g_last_input_was_gamepad = true;
+
+    auto roles = resolve_touchpad_roles(ev.touchpad);
+
+    if (roles.is_cursor_pad) {
+        g_touchpad.active = true;
+        g_touchpad.last_x = ev.x;
+        g_touchpad.last_y = ev.y;
+        g_menu_cursor_accum_x = 0.0f;
+        g_menu_cursor_accum_y = 0.0f;
+        g_last_input_was_gamepad = true;
+    } else if (roles.is_scroll_pad) {
+        g_touchpad_left.active = true;
+        g_touchpad_left.last_x = ev.x;
+        g_touchpad_left.last_y = ev.y;
+        g_touchpad_left_scroll_accum = 0.0f;
+        g_last_input_was_gamepad = true;
+    }
 }
 
 static void handle_gamepad_touchpad_motion(const SDL_GamepadTouchpadEvent& ev)
 {
     if (!is_gamepad_input_active() || SDL_GetGamepadID(g_gamepad) != ev.which) return;
-    if (ev.touchpad != 0 || ev.finger != 0) return;
-    if (!g_touchpad.active) return;
-    // Always update position so delta is fresh when we next enter menu state.
-    float dx = ev.x - g_touchpad.last_x;
-    float dy = ev.y - g_touchpad.last_y;
-    g_touchpad.last_x = ev.x;
-    g_touchpad.last_y = ev.y;
-    if (g_message_log_close_cooldown > 0.0f) return;
-    if (!is_gamepad_menu_navigation_state()) return;
-    // Scale: one full touchpad swipe maps to traversing the full screen dimension.
-    float fdx = dx * static_cast<float>(rf::gr::screen_width());
-    float fdy = dy * static_cast<float>(rf::gr::screen_height());
-    menu_nav_apply_cursor_delta(fdx, fdy);
+    if (ev.finger != 0) return;
+
+    auto roles = resolve_touchpad_roles(ev.touchpad);
+
+    if (roles.is_cursor_pad) {
+        if (!g_touchpad.active) return;
+        float dx = ev.x - g_touchpad.last_x;
+        float dy = ev.y - g_touchpad.last_y;
+        g_touchpad.last_x = ev.x;
+        g_touchpad.last_y = ev.y;
+        if (g_message_log_close_cooldown > 0.0f) return;
+        if (is_gamepad_menu_navigation_state()) {
+            float fdx = dx * static_cast<float>(rf::gr::screen_width());
+            float fdy = dy * static_cast<float>(rf::gr::screen_height());
+            menu_nav_apply_cursor_delta(fdx, fdy);
+        } else if (roles.has_two_pads) {
+            g_touchpad_camera_dx += dx;
+            g_touchpad_camera_dy += dy;
+        }
+    } else if (roles.is_scroll_pad) {
+        if (!g_touchpad_left.active) return;
+        float dy = ev.y - g_touchpad_left.last_y;
+        g_touchpad_left.last_x = ev.x;
+        g_touchpad_left.last_y = ev.y;
+        if (g_message_log_close_cooldown > 0.0f) return;
+        if (!is_gamepad_menu_navigation_state()) return;
+        constexpr float k_scroll_tick = 0.1f;
+        g_touchpad_left_scroll_accum += dy;
+        while (g_touchpad_left_scroll_accum >= k_scroll_tick) {
+            g_touchpad_left_scroll_accum -= k_scroll_tick;
+            rf::mouse_dz = -1;
+            g_pending_scroll_delta += -1;
+            if (rf::gameseq_get_state() == rf::GS_MESSAGE_LOG)
+                rf::ui::message_log_down_on_click(-1, -1);
+        }
+        while (g_touchpad_left_scroll_accum <= -k_scroll_tick) {
+            g_touchpad_left_scroll_accum += k_scroll_tick;
+            rf::mouse_dz = 1;
+            g_pending_scroll_delta += 1;
+            if (rf::gameseq_get_state() == rf::GS_MESSAGE_LOG)
+                rf::ui::message_log_up_on_click(-1, -1);
+        }
+        g_last_input_was_gamepad = true;
+    }
 }
 
 static void handle_gamepad_touchpad_up(const SDL_GamepadTouchpadEvent& ev)
 {
     if (!is_gamepad_input_active() || SDL_GetGamepadID(g_gamepad) != ev.which) return;
-    if (ev.touchpad != 0 || ev.finger != 0) return;
-    g_touchpad.active = false;
+    if (ev.finger != 0) return;
+
+    auto roles = resolve_touchpad_roles(ev.touchpad);
+
+    if (roles.is_cursor_pad) {
+        g_touchpad.active = false;
+    } else if (roles.is_scroll_pad) {
+        g_touchpad_left.active = false;
+        g_touchpad_left_scroll_accum = 0.0f;
+    }
 }
 
 static void handle_gamepad_sensor_update(const SDL_GamepadSensorEvent& ev)
@@ -980,6 +1073,8 @@ static void menu_nav_handle_cursor_frame()
 
 static void menu_nav_tick_dpad_repeat()
 {
+    if (g_touchpad_left.active)
+        g_menu_nav.repeat_btn = -1;
     if (g_menu_nav.repeat_btn < 0 || rf::ui::options_controls_waiting_for_key) return;
     g_menu_nav.repeat_timer -= rf::frametime;
     if (g_menu_nav.repeat_timer <= 0.0f) {
@@ -990,6 +1085,10 @@ static void menu_nav_tick_dpad_repeat()
 
 static void menu_nav_tick_scroll()
 {
+    if (g_touchpad.active || g_touchpad_left.active) {
+        g_menu_nav.scroll_timer = 0.0f;
+        return;
+    }
     constexpr float k_scroll_deadzone = 0.24f;
     float ry = get_axis(SDL_GAMEPAD_AXIS_RIGHTY, k_scroll_deadzone);
     if (ry == 0.0f) {
@@ -1150,6 +1249,16 @@ static void gamepad_apply_joystick(SDL_GamepadAxis cam_x, SDL_GamepadAxis cam_y,
     pitch_delta = joy_pitch_sign * rf::frametime * g_alpine_game_config.gamepad_joy_sensitivity * ry * zoom_sens;
 }
 
+static void gamepad_apply_trackpad(float zoom_sens, float& yaw_delta, float& pitch_delta)
+{
+    constexpr float deg2rad = 3.14159265f / 180.0f;
+    float joy_pitch_sign = g_alpine_game_config.gamepad_joy_invert_y ? 1.0f : -1.0f;
+    yaw_delta   =              g_alpine_game_config.gamepad_trackpad_sensitivity * deg2rad * g_touchpad_camera_dx * zoom_sens;
+    pitch_delta = joy_pitch_sign * g_alpine_game_config.gamepad_trackpad_sensitivity * deg2rad * g_touchpad_camera_dy * zoom_sens;
+    g_touchpad_camera_dx = 0.0f;
+    g_touchpad_camera_dy = 0.0f;
+}
+
 static void gamepad_apply_gyro(bool has_player_entity, float zoom_sens, float& yaw_delta, float& pitch_delta)
 {
     float gyro_pitch, gyro_yaw;
@@ -1248,8 +1357,13 @@ void consume_raw_gamepad_deltas(float& pitch_delta, float& yaw_delta)
         }
     }
 
-    // Use flickstick when not scoped/scanning; joystick while scoped/scanning for consistent aim.
-    if (g_alpine_game_config.gamepad_joy_camera && !is_freelook && !is_scoped_or_scanning) {
+    // Use flickstick when not scoped/scanning; joystick or touchpad while scoped/scanning for consistent aim.
+    // When the cursor pad is active, suppress right-stick axes entirely (Steam Controller right pad
+    // drives both RIGHTX/RIGHTY and touchpad 1 simultaneously).
+    if (g_touchpad.active) {
+        if (g_touchpad_camera_dx != 0.0f || g_touchpad_camera_dy != 0.0f)
+            gamepad_apply_trackpad(gamepad_zoom_sens, yaw_delta, pitch_delta);
+    } else if (g_alpine_game_config.gamepad_joy_camera && !is_freelook && !is_scoped_or_scanning) {
         gamepad_apply_flickstick(cam_x, cam_y, yaw_delta, pitch_delta);
         yaw_delta   *= gamepad_zoom_sens;
         pitch_delta *= gamepad_zoom_sens;
@@ -1473,6 +1587,16 @@ ConsoleCommand2 joy_sens_cmd{
     },
     "Set gamepad look sensitivity (default 5.0)",
     "joy_sens [value]",
+};
+
+ConsoleCommand2 trackpad_sens_cmd{
+    "trackpad_sens",
+    [](std::optional<float> val) {
+        if (val) g_alpine_game_config.gamepad_trackpad_sensitivity = std::max(0.0f, val.value());
+        rf::console::print("Gamepad trackpad sensitivity: {:.4f}", g_alpine_game_config.gamepad_trackpad_sensitivity);
+    },
+    "Set gamepad trackpad camera turn per full swipe in degrees (default 180.0)",
+    "trackpad_sens [value]",
 };
 
 ConsoleCommand2 joy_move_deadzone_cmd{
@@ -2102,6 +2226,7 @@ void gamepad_apply_patch()
     key_process_event_hook.install();
     mouse_was_button_pressed_hook.install();
     joy_sens_cmd.register_cmd();
+    trackpad_sens_cmd.register_cmd();
     joy_move_deadzone_cmd.register_cmd();
     joy_look_deadzone_cmd.register_cmd();
     joy_scope_sens_cmd.register_cmd();
@@ -2231,6 +2356,7 @@ void gamepad_sdl_init()
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS3, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS3_SIXAXIS_DRIVER, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_STEAM, "1");
     if (g_alpine_system_config.gamepad_rawinput_enabled) {
         SDL_SetHint(SDL_HINT_JOYSTICK_RAWINPUT, "1");
         SDL_SetHint(SDL_HINT_JOYSTICK_RAWINPUT_CORRELATE_XINPUT, "1");

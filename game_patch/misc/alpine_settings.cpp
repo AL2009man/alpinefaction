@@ -1090,6 +1090,10 @@ bool alpine_player_settings_load(rf::Player* player)
         g_alpine_game_config.gamepad_joy_sensitivity = std::max(0.0f, std::stof(settings["GamepadCameraSensitivity"]));
         processed_keys.insert("GamepadCameraSensitivity");
     }
+    if (settings.count("GamepadTrackpadSensitivity")) {
+        g_alpine_game_config.gamepad_trackpad_sensitivity = std::max(0.0f, std::stof(settings["GamepadTrackpadSensitivity"]));
+        processed_keys.insert("GamepadTrackpadSensitivity");
+    }
     if (settings.count("GamepadScopeSensitivityModifier")) {
         g_alpine_game_config.set_gamepad_scope_sens_mod(std::stof(settings["GamepadScopeSensitivityModifier"]));
         processed_keys.insert("GamepadScopeSensitivityModifier");
@@ -1369,6 +1373,7 @@ void alpine_control_config_serialize(std::ofstream& file, const rf::ControlConfi
     file << "ScannerSensitivityModifier=" << g_alpine_game_config.scanner_sensitivity_modifier << "\n";
     file << "QuickExit=" << g_alpine_game_config.quick_exit << "\n";
     file << "GamepadCameraSensitivity=" << g_alpine_game_config.gamepad_joy_sensitivity << "\n";
+    file << "GamepadTrackpadSensitivity=" << g_alpine_game_config.gamepad_trackpad_sensitivity << "\n";
     file << "GamepadMoveDeadzone=" << g_alpine_game_config.gamepad_move_deadzone << "\n";
     file << "GamepadLookDeadzone=" << g_alpine_game_config.gamepad_look_deadzone << "\n";
     file << "GamepadScopeSensitivityModifier=" << g_alpine_game_config.gamepad_scope_sensitivity_modifier << "\n";
