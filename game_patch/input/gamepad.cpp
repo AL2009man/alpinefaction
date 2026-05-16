@@ -44,6 +44,9 @@ static float g_gamepad_scope_gyro_sensitivity_value = 0.25f;
 static float g_gamepad_scanner_gyro_sensitivity_value = 0.25f;
 static float g_gamepad_scope_applied_dynamic_sensitivity_value = 1.0f;
 static float g_gamepad_scope_gyro_applied_dynamic_sensitivity_value = 1.0f;
+static float g_gamepad_scope_trackpad_sensitivity_value = 0.25f;
+static float g_gamepad_scanner_trackpad_sensitivity_value = 0.25f;
+static float g_gamepad_scope_trackpad_applied_dynamic_sensitivity_value = 1.0f;
 
 static int g_button_map[SDL_GAMEPAD_BUTTON_COUNT];
 static int g_button_map_alt[SDL_GAMEPAD_BUTTON_COUNT];
@@ -94,9 +97,7 @@ struct TouchpadState {
     float last_x = 0.0f;
     float last_y = 0.0f;
 
-    // Per-event noise floor filter. Returns true when the delta is non-zero.
-    bool compute_delta(float new_x, float new_y, float& out_dx, float& out_dy,
-                       float noise_floor = 0.003f)
+    bool compute_delta(float new_x, float new_y, float& out_dx, float& out_dy)
     {
         out_dx = new_x - last_x;
         out_dy = new_y - last_y;
@@ -109,14 +110,16 @@ struct TouchpadState {
             return false;
         }
 
-        return std::hypot(out_dx, out_dy) >= noise_floor;
+        return true;
     }
 };
-    
+
 static TouchpadState g_touchpad;
 static TouchpadState g_trackpad_left;
 static float g_trackpad_left_scroll_accum = 0.0f;
 static int   g_touchpad_btn_pad = -1;  // touchpad index of the active finger-0 contact
+static float g_touchpad_cam_dx  = 0.0f;
+static float g_touchpad_cam_dy  = 0.0f;
 
 static float g_move_lx = 0.0f, g_move_ly = 0.0f;
 static float g_move_mag = 0.0f;
@@ -158,6 +161,10 @@ static void update_gamepad_scoped_sensitivities()
         (1.0f / (4.0f * g_alpine_game_config.gamepad_scope_sensitivity_modifier)) * rf::scope_sensitivity_constant;
     g_gamepad_scope_gyro_applied_dynamic_sensitivity_value =
         (1.0f / (4.0f * g_alpine_game_config.gamepad_scope_gyro_sensitivity_modifier)) * rf::scope_sensitivity_constant;
+    g_gamepad_scope_trackpad_sensitivity_value = g_alpine_game_config.gamepad_scope_trackpad_sensitivity_modifier;
+    g_gamepad_scanner_trackpad_sensitivity_value = g_alpine_game_config.gamepad_scanner_trackpad_sensitivity_modifier;
+    g_gamepad_scope_trackpad_applied_dynamic_sensitivity_value =
+        (1.0f / (4.0f * g_alpine_game_config.gamepad_scope_trackpad_sensitivity_modifier)) * rf::scope_sensitivity_constant;
 }
 
 static bool is_menu_only_action(int action_idx)
@@ -217,6 +224,8 @@ static void reset_gamepad_input_state()
     g_trackpad_left = {};
     g_trackpad_left_scroll_accum = 0.0f;
     g_touchpad_btn_pad = -1;
+    g_touchpad_cam_dx  = 0.0f;
+    g_touchpad_cam_dy  = 0.0f;
     g_menu_cursor_accum_x = 0.0f;
     g_gyro_menu_cursor_active = false;
     g_lt_was_down = false;
@@ -912,10 +921,14 @@ static void handle_gamepad_touchpad_motion(const SDL_GamepadTouchpadEvent& ev)
     float dx, dy;
     if (!g_touchpad.compute_delta(ev.x, ev.y, dx, dy)) return;
     if (g_message_log_close_cooldown > 0.0f) return;
-    if (!is_gamepad_menu_navigation_state()) return;
-    float fdx = dx * static_cast<float>(rf::gr::screen_width());
-    float fdy = dy * static_cast<float>(rf::gr::screen_height());
-    menu_nav_apply_cursor_delta(fdx, fdy);
+    if (is_gamepad_menu_navigation_state()) {
+        float fdx = dx * static_cast<float>(rf::gr::screen_width());
+        float fdy = dy * static_cast<float>(rf::gr::screen_height());
+        menu_nav_apply_cursor_delta(fdx, fdy);
+    } else if (g_has_dual_trackpads) {
+        g_touchpad_cam_dx += dx;
+        g_touchpad_cam_dy += dy;
+    }
 }
 
 static void handle_gamepad_touchpad_up(const SDL_GamepadTouchpadEvent& ev)
@@ -1249,6 +1262,37 @@ static void gamepad_apply_gyro(bool has_player_entity, float zoom_sens, float& y
     pitch_delta += out_pitch;
 }
 
+static void gamepad_apply_trackpad(bool has_player_entity, float& yaw_delta, float& pitch_delta)
+{
+    if (g_touchpad_cam_dx == 0.0f && g_touchpad_cam_dy == 0.0f) return;
+    float trackpad_zoom_sens = 1.0f;
+    if (has_player_entity) {
+        if (rf::local_player->fpgun_data.scanning_for_target) {
+            trackpad_zoom_sens *= g_gamepad_scanner_trackpad_sensitivity_value;
+        } else {
+            float zoom = rf::local_player->fpgun_data.zoom_factor;
+            if (zoom > 1.0f) {
+                if (g_alpine_game_config.scope_static_sensitivity) {
+                    trackpad_zoom_sens *= g_gamepad_scope_trackpad_sensitivity_value;
+                } else {
+                    constexpr float zoom_scale = 30.0f;
+                    float divisor = (zoom - 1.0f) * g_gamepad_scope_trackpad_applied_dynamic_sensitivity_value * zoom_scale;
+                    if (divisor > 1.0f) {
+                        trackpad_zoom_sens /= divisor;
+                    }
+                }
+            }
+        }
+    }
+    constexpr float deg2rad = 3.14159265f / 180.0f;
+    float sens = g_alpine_game_config.gamepad_trackpad_sensitivity * deg2rad;
+    float invert = g_alpine_game_config.gamepad_joy_invert_y ? 1.0f : -1.0f;
+    yaw_delta   += g_touchpad_cam_dx * sens * trackpad_zoom_sens;
+    pitch_delta += g_touchpad_cam_dy * sens * trackpad_zoom_sens * invert;
+    g_touchpad_cam_dx = 0.0f;
+    g_touchpad_cam_dy = 0.0f;
+}
+
 void consume_raw_gamepad_deltas(float& pitch_delta, float& yaw_delta)
 {
     pitch_delta = 0.0f;
@@ -1306,12 +1350,16 @@ void consume_raw_gamepad_deltas(float& pitch_delta, float& yaw_delta)
         }
     }
 
-    if (g_alpine_game_config.gamepad_joy_camera && !is_freelook && !is_scoped_or_scanning) {
-        gamepad_apply_flickstick(cam_x, cam_y, yaw_delta, pitch_delta);
-        yaw_delta   *= gamepad_zoom_sens;
-        pitch_delta *= gamepad_zoom_sens;
-    } else {
-        gamepad_apply_joystick(cam_x, cam_y, cam_dz, gamepad_zoom_sens, yaw_delta, pitch_delta);
+    bool cam_pad_active = g_has_dual_trackpads
+        && (g_alpine_game_config.gamepad_swap_sticks ? g_trackpad_left.active : g_touchpad.active);
+    if (!cam_pad_active) {
+        if (g_alpine_game_config.gamepad_joy_camera && !is_freelook && !is_scoped_or_scanning) {
+            gamepad_apply_flickstick(cam_x, cam_y, yaw_delta, pitch_delta);
+            yaw_delta   *= gamepad_zoom_sens;
+            pitch_delta *= gamepad_zoom_sens;
+        } else {
+            gamepad_apply_joystick(cam_x, cam_y, cam_dz, gamepad_zoom_sens, yaw_delta, pitch_delta);
+        }
     }
 
     bool allow_gyro = !is_freelook
@@ -1322,6 +1370,9 @@ void consume_raw_gamepad_deltas(float& pitch_delta, float& yaw_delta)
 
     if (allow_gyro)
         gamepad_apply_gyro(has_player_entity, gamepad_zoom_sens, yaw_delta, pitch_delta);
+
+    if (g_has_dual_trackpads)
+        gamepad_apply_trackpad(has_player_entity, yaw_delta, pitch_delta);
 
     g_camera_gamepad_dx += pitch_delta;
     g_camera_gamepad_dy += yaw_delta;
@@ -1630,6 +1681,36 @@ ConsoleCommand2 joy_flickstick_release_deadzone_cmd{
     },
     "Set flick-stick release deadzone 0.0-0.9 (default 0.70)",
     "joy_flickstick_release_deadzone [value]",
+};
+
+ConsoleCommand2 trackpad_sens_cmd{
+    "trackpad_sens",
+    [](std::optional<float> val) {
+        if (val) g_alpine_game_config.gamepad_trackpad_sensitivity = std::max(0.0f, val.value());
+        rf::console::print("Trackpad camera turn per full swipe: {:.1f} degrees", g_alpine_game_config.gamepad_trackpad_sensitivity);
+    },
+    "Set trackpad camera turn per full swipe (default 180)",
+    "trackpad_sens [degrees]",
+};
+
+ConsoleCommand2 trackpad_scope_sens_cmd{
+    "trackpad_scope_sens",
+    [](std::optional<float> val) {
+        if (val) g_alpine_game_config.set_gamepad_scope_trackpad_sens_mod(val.value());
+        rf::console::print("Trackpad scope sensitivity modifier: {:.4f}", g_alpine_game_config.gamepad_scope_trackpad_sensitivity_modifier);
+    },
+    "Set trackpad scope sensitivity modifier (default 0.25)",
+    "trackpad_scope_sens [value]",
+};
+
+ConsoleCommand2 trackpad_scanner_sens_cmd{
+    "trackpad_scanner_sens",
+    [](std::optional<float> val) {
+        if (val) g_alpine_game_config.set_gamepad_scanner_trackpad_sens_mod(val.value());
+        rf::console::print("Trackpad scanner sensitivity modifier: {:.4f}", g_alpine_game_config.gamepad_scanner_trackpad_sensitivity_modifier);
+    },
+    "Set trackpad scanner sensitivity modifier (default 0.25)",
+    "trackpad_scanner_sens [value]",
 };
 
 ConsoleCommand2 joy_rumble_cmd{
@@ -2175,6 +2256,9 @@ void gamepad_apply_patch()
     joy_scanner_sens_cmd.register_cmd();
     gyro_scope_sens_cmd.register_cmd();
     gyro_scanner_sens_cmd.register_cmd();
+    trackpad_sens_cmd.register_cmd();
+    trackpad_scope_sens_cmd.register_cmd();
+    trackpad_scanner_sens_cmd.register_cmd();
     joy_flickstick_cmd.register_cmd();
     joy_flickstick_sweep_cmd.register_cmd();
     joy_flickstick_smoothing_cmd.register_cmd();

@@ -72,6 +72,18 @@ struct AlpineGameSettings
         gamepad_scanner_gyro_sensitivity_modifier = std::clamp(mod, min_sens_mod, max_sens_mod);
     }
 
+    float gamepad_scope_trackpad_sensitivity_modifier = 0.25f;
+    void set_gamepad_scope_trackpad_sens_mod(float mod)
+    {
+        gamepad_scope_trackpad_sensitivity_modifier = std::clamp(mod, min_sens_mod, max_sens_mod);
+    }
+
+    float gamepad_scanner_trackpad_sensitivity_modifier = 0.25f;
+    void set_gamepad_scanner_trackpad_sens_mod(float mod)
+    {
+        gamepad_scanner_trackpad_sensitivity_modifier = std::clamp(mod, min_sens_mod, max_sens_mod);
+    }
+
     float level_sound_volume = 1.0f;
     void set_level_sound_volume(float scale)
     {
@@ -198,6 +210,7 @@ struct AlpineGameSettings
     int gamepad_icon_override = 0; // 0=Auto, 1=Generic, 2=Xbox360, 3=XboxOne, 4=DS3, 5=DS4, 6=DualSense, 7=NintendoSwitch, 8=NintendoGameCube, 9=Steam, 10=SteamControllerLegacy
     int input_prompt_override = 0; // 0=Auto, 1=Controller, 2=Keyboard
     bool gamepad_joy_invert_y = false;
+    float gamepad_trackpad_sensitivity = 180.0f;
     bool gamepad_swap_sticks = false;
     float gamepad_rumble_intensity = 1.0f;
     bool gamepad_weapon_rumble_enabled = true;
