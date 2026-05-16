@@ -33,6 +33,7 @@ static SDL_Gamepad* g_gamepad = nullptr;
 static bool g_motion_sensors_supported = false;
 static bool g_rumble_supported         = false;
 static bool g_trigger_rumble_supported = false;
+static bool g_has_dual_trackpads       = false;
 
 static float g_camera_gamepad_dx = 0.0f;
 static float g_camera_gamepad_dy = 0.0f;
@@ -88,11 +89,34 @@ struct MenuNavState {
 static MenuNavState g_menu_nav;
 
 struct TouchpadState {
-    bool  active = false;
+    bool  active            = false;
+    bool  skip_first_motion = false;
     float last_x = 0.0f;
     float last_y = 0.0f;
+
+    // Per-event noise floor filter. Returns true when the delta is non-zero.
+    bool compute_delta(float new_x, float new_y, float& out_dx, float& out_dy,
+                       float noise_floor = 0.003f)
+    {
+        out_dx = new_x - last_x;
+        out_dy = new_y - last_y;
+        last_x = new_x;
+        last_y = new_y;
+
+        if (skip_first_motion) {
+            skip_first_motion = false;
+            out_dx = out_dy = 0.0f;
+            return false;
+        }
+
+        return std::hypot(out_dx, out_dy) >= noise_floor;
+    }
 };
+    
 static TouchpadState g_touchpad;
+static TouchpadState g_trackpad_left;
+static float g_trackpad_left_scroll_accum = 0.0f;
+static int   g_touchpad_btn_pad = -1;  // touchpad index of the active finger-0 contact
 
 static float g_move_lx = 0.0f, g_move_ly = 0.0f;
 static float g_move_mag = 0.0f;
@@ -190,6 +214,9 @@ static void reset_gamepad_input_state()
     memset(g_flickstick_turn_smooth_buf, 0, sizeof(g_flickstick_turn_smooth_buf));
     g_flickstick_turn_smooth_idx   = 0;
     g_touchpad = {};
+    g_trackpad_left = {};
+    g_trackpad_left_scroll_accum = 0.0f;
+    g_touchpad_btn_pad = -1;
     g_menu_cursor_accum_x = 0.0f;
     g_gyro_menu_cursor_active = false;
     g_lt_was_down = false;
@@ -308,6 +335,9 @@ static void try_open_gamepad(SDL_JoystickID id)
     try_enable_gamepad_rumble();
     try_enable_gamepad_trigger_rumble();
     try_enable_gamepad_sensors();
+    int num_touchpads = SDL_GetNumGamepadTouchpads(g_gamepad);
+    g_has_dual_trackpads = num_touchpads >= 2;
+    xlog::info("Gamepad touchpad count: {}", num_touchpads);
 }
 
 static void inject_action_key(int action, bool down)
@@ -505,6 +535,7 @@ static bool menu_nav_on_button_down(int btn)
     }
     switch (btn) {
     case SDL_GAMEPAD_BUTTON_TOUCHPAD:
+        if (g_has_dual_trackpads && g_touchpad_btn_pad != 1) return true;
         menu_nav_handle_confirm();
         return true;
     case SDL_GAMEPAD_BUTTON_DPAD_UP:
@@ -527,7 +558,8 @@ static void menu_nav_on_button_up(int btn)
 {
     if (btn == g_menu_nav.repeat_btn)
         g_menu_nav.repeat_btn = -1;
-    if (btn == static_cast<int>(get_menu_confirm_button()) || btn == SDL_GAMEPAD_BUTTON_TOUCHPAD)
+    if (btn == static_cast<int>(get_menu_confirm_button())
+        || (btn == SDL_GAMEPAD_BUTTON_TOUCHPAD && (!g_has_dual_trackpads || g_touchpad_btn_pad == 1)))
         menu_nav_release_click();
 }
 
@@ -673,6 +705,7 @@ static void disconnect_active_gamepad()
     g_motion_sensors_supported = false;
     g_rumble_supported         = false;
     g_trigger_rumble_supported = false;
+    g_has_dual_trackpads       = false;
     release_movement_keys();
     for (int b = 0; b < SDL_GAMEPAD_BUTTON_COUNT; ++b) {
         inject_action_key(g_button_map[b], false);
@@ -830,9 +863,18 @@ static void handle_gamepad_axis_motion(const SDL_GamepadAxisEvent& ev)
 static void handle_gamepad_touchpad_down(const SDL_GamepadTouchpadEvent& ev)
 {
     if (!is_gamepad_input_active() || SDL_GetGamepadID(g_gamepad) != ev.which) return;
-    if (ev.touchpad != 0 || ev.finger != 0) return;
+    if (ev.finger == 0) g_touchpad_btn_pad = ev.touchpad;
+    if (g_has_dual_trackpads && ev.touchpad == 0 && ev.finger == 0) {
+        g_trackpad_left.active = true;
+        g_trackpad_left.last_y = ev.y;
+        g_trackpad_left_scroll_accum = 0.0f;
+        set_last_input_gamepad(true);
+        return;
+    }
+    if (ev.touchpad != (g_has_dual_trackpads ? 1 : 0) || ev.finger != 0) return;
     if (g_message_log_close_cooldown > 0.0f) return;
-    g_touchpad.active = true;
+    g_touchpad.active            = true;
+    g_touchpad.skip_first_motion = true;
     g_touchpad.last_x = ev.x;
     g_touchpad.last_y = ev.y;
     g_menu_cursor_accum_x = 0.0f;
@@ -843,12 +885,32 @@ static void handle_gamepad_touchpad_down(const SDL_GamepadTouchpadEvent& ev)
 static void handle_gamepad_touchpad_motion(const SDL_GamepadTouchpadEvent& ev)
 {
     if (!is_gamepad_input_active() || SDL_GetGamepadID(g_gamepad) != ev.which) return;
-    if (ev.touchpad != 0 || ev.finger != 0) return;
+    if (g_has_dual_trackpads && ev.touchpad == 0 && ev.finger == 0 && g_trackpad_left.active) {
+        if (g_message_log_close_cooldown > 0.0f) return;
+        if (!is_gamepad_menu_navigation_state()) return;
+        float dy = ev.y - g_trackpad_left.last_y;
+        g_trackpad_left.last_y = ev.y;
+        g_trackpad_left_scroll_accum += dy;
+        constexpr float k_scroll_threshold = 0.05f;
+        if (g_trackpad_left_scroll_accum >= k_scroll_threshold) {
+            g_trackpad_left_scroll_accum -= k_scroll_threshold;
+            g_pending_scroll_delta = -1;
+            rf::mouse_dz = -1;
+            if (rf::gameseq_get_state() == rf::GS_MESSAGE_LOG)
+                rf::ui::message_log_down_on_click(-1, -1);
+        } else if (g_trackpad_left_scroll_accum <= -k_scroll_threshold) {
+            g_trackpad_left_scroll_accum += k_scroll_threshold;
+            g_pending_scroll_delta = 1;
+            rf::mouse_dz = 1;
+            if (rf::gameseq_get_state() == rf::GS_MESSAGE_LOG)
+                rf::ui::message_log_up_on_click(-1, -1);
+        }
+        return;
+    }
+    if (ev.touchpad != (g_has_dual_trackpads ? 1 : 0) || ev.finger != 0) return;
     if (!g_touchpad.active) return;
-    float dx = ev.x - g_touchpad.last_x;
-    float dy = ev.y - g_touchpad.last_y;
-    g_touchpad.last_x = ev.x;
-    g_touchpad.last_y = ev.y;
+    float dx, dy;
+    if (!g_touchpad.compute_delta(ev.x, ev.y, dx, dy)) return;
     if (g_message_log_close_cooldown > 0.0f) return;
     if (!is_gamepad_menu_navigation_state()) return;
     float fdx = dx * static_cast<float>(rf::gr::screen_width());
@@ -859,7 +921,13 @@ static void handle_gamepad_touchpad_motion(const SDL_GamepadTouchpadEvent& ev)
 static void handle_gamepad_touchpad_up(const SDL_GamepadTouchpadEvent& ev)
 {
     if (!is_gamepad_input_active() || SDL_GetGamepadID(g_gamepad) != ev.which) return;
-    if (ev.touchpad != 0 || ev.finger != 0) return;
+    if (ev.finger == 0) g_touchpad_btn_pad = -1;
+    if (g_has_dual_trackpads && ev.touchpad == 0 && ev.finger == 0) {
+        g_trackpad_left.active = false;
+        g_trackpad_left_scroll_accum = 0.0f;
+        return;
+    }
+    if (ev.touchpad != (g_has_dual_trackpads ? 1 : 0) || ev.finger != 0) return;
     g_touchpad.active = false;
 }
 
@@ -954,6 +1022,7 @@ static void menu_nav_handle_gyro_cursor_frame()
 
 static void menu_nav_handle_cursor_frame()
 {
+    if (g_has_dual_trackpads && (g_trackpad_left.active || g_touchpad.active)) return;
     constexpr float k_menu_stick_deadzone = 0.24f;
     constexpr float k_base_speed          = 1000.0f;
     float sx, sy;
@@ -977,6 +1046,7 @@ static void menu_nav_tick_dpad_repeat()
 
 static void menu_nav_tick_scroll()
 {
+    if (g_has_dual_trackpads && g_touchpad.active) return;
     constexpr float k_scroll_deadzone = 0.24f;
     float ry = get_axis(SDL_GAMEPAD_AXIS_RIGHTY, k_scroll_deadzone);
     if (ry == 0.0f) {
