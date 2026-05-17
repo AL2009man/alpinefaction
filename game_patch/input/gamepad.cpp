@@ -1763,6 +1763,16 @@ ConsoleCommand2 trackpad_scanner_sens_cmd{
     "trackpad_scanner_sens [value]",
 };
 
+ConsoleCommand2 swap_trackpads_cmd{
+    "swap_trackpads",
+    [](std::optional<int> val) {
+        if (val) g_alpine_game_config.gamepad_swap_trackpads = *val != 0;
+        rf::console::print("Swap trackpads: {}", g_alpine_game_config.gamepad_swap_trackpads ? "enabled" : "disabled");
+    },
+    "Swap camera and scroll trackpads on dual-trackpad devices (default 0)",
+    "swap_trackpads [0|1]",
+};
+
 ConsoleCommand2 joy_rumble_cmd{
     "joy_rumble",
     [](std::optional<float> val) {
@@ -1830,16 +1840,6 @@ ConsoleCommand2 joy_rumble_vibration_filter_cmd{
     "joy_rumble_vibration_filter [0|1|2]",
 };
 
-ConsoleCommand2 gyro_menu_cursor_sens_cmd{
-    "gyro_menu_cursor_sens",
-    [](std::optional<float> val) {
-        if (val) g_alpine_game_config.gamepad_gyro_menu_cursor_sensitivity = std::clamp(val.value(), 0.0f, 30.0f);
-        rf::console::print("Gyro menu cursor sensitivity: {:.4f}", g_alpine_game_config.gamepad_gyro_menu_cursor_sensitivity);
-    },
-    "Set gyro cursor sensitivity for menus (0 = disabled, default 1.0)",
-    "gyro_menu_cursor_sens [value]",
-};
-
 ConsoleCommand2 gyro_camera_cmd{
     "gyro_camera",
     [](std::optional<int> val) {
@@ -1890,6 +1890,26 @@ ConsoleCommand2 gyro_scanner_sens_cmd{
     "gyro_scanner_sens [value]",
 };
 
+ConsoleCommand2 gyro_menu_cursor_sens_cmd{
+    "gyro_menu_cursor_sens",
+    [](std::optional<float> val) {
+        if (val) g_alpine_game_config.gamepad_gyro_menu_cursor_sensitivity = std::clamp(val.value(), 0.0f, 30.0f);
+        rf::console::print("Gyro menu cursor sensitivity: {:.4f}", g_alpine_game_config.gamepad_gyro_menu_cursor_sensitivity);
+    },
+    "Set gyro cursor sensitivity for menus (0 = disabled, default 1.0)",
+    "gyro_menu_cursor_sens [value]",
+};
+
+ConsoleCommand2 gyro_gripsense{
+    "gyro_gripsense",
+    [](std::optional<int> val) {
+        if (val) g_alpine_game_config.gamepad_gyro_gripsense = *val != 0;
+        rf::console::print("Gripsense: {}", g_alpine_game_config.gamepad_gyro_gripsense ? "enabled" : "disabled");
+    },
+    "Enable Gripsense as a gyro touch activator (default 0)",
+    "gyro_gripsense [0|1]",
+};
+
 ConsoleCommand2 input_prompts_cmd{
     "input_prompts",
     [](std::optional<int> val) {
@@ -1918,26 +1938,6 @@ ConsoleCommand2 gamepad_prompts_cmd{
     },
     "Set gamepad button icon style: 0=Auto, 1=Generic, 2=Xbox 360 Controller, 3=Xbox Wireless Controller, 4=DualShock 3, 5=DualShock 4, 6=DualSense, 7=Nintendo Switch Controller, 8=Nintendo GameCube Controller, 9=Steam",
     "gamepad_prompts [0-9]",
-};
-
-ConsoleCommand2 swap_trackpads_cmd{
-    "swap_trackpads",
-    [](std::optional<int> val) {
-        if (val) g_alpine_game_config.gamepad_swap_trackpads = *val != 0;
-        rf::console::print("Swap trackpads: {}", g_alpine_game_config.gamepad_swap_trackpads ? "enabled" : "disabled");
-    },
-    "Swap camera and scroll trackpads on dual-trackpad devices (default 0)",
-    "swap_trackpads [0|1]",
-};
-
-ConsoleCommand2 gyro_gripsense{
-    "gyro_gripsense",
-    [](std::optional<int> val) {
-        if (val) g_alpine_game_config.gamepad_gyro_gripsense = *val != 0;
-        rf::console::print("Gripsense: {}", g_alpine_game_config.gamepad_gyro_gripsense ? "enabled" : "disabled");
-    },
-    "Enable Gripsense as a gyro touch activator (default 0)",
-    "gyro_gripsense [0|1]",
 };
 
 ConsoleCommand2 joy_reconnect_cmd{
@@ -2320,35 +2320,35 @@ void gamepad_apply_patch()
     key_process_event_hook.install();
     mouse_was_button_pressed_hook.install();
     joy_sens_cmd.register_cmd();
+    swap_sticks_cmd.register_cmd();
     joy_move_deadzone_cmd.register_cmd();
     joy_look_deadzone_cmd.register_cmd();
     joy_scope_sens_cmd.register_cmd();
     joy_scanner_sens_cmd.register_cmd();
-    gyro_scope_sens_cmd.register_cmd();
-    gyro_scanner_sens_cmd.register_cmd();
-    trackpad_sens_cmd.register_cmd();
-    trackpad_scope_sens_cmd.register_cmd();
-    trackpad_scanner_sens_cmd.register_cmd();
-    swap_trackpads_cmd.register_cmd();
-    gyro_gripsense.register_cmd();    
     joy_flickstick_cmd.register_cmd();
     joy_flickstick_sweep_cmd.register_cmd();
     joy_flickstick_smoothing_cmd.register_cmd();
     joy_flickstick_deadzone_cmd.register_cmd();
     joy_flickstick_release_deadzone_cmd.register_cmd();
+    trackpad_sens_cmd.register_cmd();
+    trackpad_scope_sens_cmd.register_cmd();
+    trackpad_scanner_sens_cmd.register_cmd();
+    swap_trackpads_cmd.register_cmd();
     joy_rumble_cmd.register_cmd();
     joy_rumble_triggers_cmd.register_cmd();
     joy_rumble_weapon_cmd.register_cmd();
     joy_rumble_environmental_cmd.register_cmd();
     joy_rumble_when_primary_cmd.register_cmd();
     joy_rumble_vibration_filter_cmd.register_cmd();
-    gyro_sens_cmd.register_cmd();
-    gyro_menu_cursor_sens_cmd.register_cmd();
     gyro_camera_cmd.register_cmd();
     gyro_vehicle_camera_cmd.register_cmd();
+    gyro_sens_cmd.register_cmd();
+    gyro_scope_sens_cmd.register_cmd();
+    gyro_scanner_sens_cmd.register_cmd();
+    gyro_menu_cursor_sens_cmd.register_cmd();
+    gyro_gripsense.register_cmd();
     input_prompts_cmd.register_cmd();
     gamepad_prompts_cmd.register_cmd();
-    swap_sticks_cmd.register_cmd();
     joy_reconnect_cmd.register_cmd();
     gyro_apply_patch();
 }
