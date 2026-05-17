@@ -1140,7 +1140,7 @@ bool alpine_player_settings_load(rf::Player* player)
         processed_keys.insert("GamepadGyroSpace");
     }
     if (settings.count("GamepadGyroModifierMode")) {
-        g_alpine_game_config.gamepad_gyro_modifier_mode = std::clamp(std::stoi(settings["GamepadGyroModifierMode"]), 0, 3);
+        g_alpine_game_config.gamepad_gyro_modifier_mode = std::clamp(std::stoi(settings["GamepadGyroModifierMode"]), 0, 5);
         processed_keys.insert("GamepadGyroModifierMode");
     }
     if (settings.count("GamepadGyroInvertY")) {
@@ -1194,6 +1194,10 @@ bool alpine_player_settings_load(rf::Player* player)
     if (settings.count("GamepadSwapSticks")) {
         g_alpine_game_config.gamepad_swap_sticks = std::stoi(settings["GamepadSwapSticks"]) != 0;
         processed_keys.insert("GamepadSwapSticks");
+    }
+    if (settings.count("GamepadSwapTrackpads")) {
+        g_alpine_game_config.gamepad_swap_trackpads = std::stoi(settings["GamepadSwapTrackpads"]) != 0;
+        processed_keys.insert("GamepadSwapTrackpads");
     }
     if (settings.count("GamepadRumble")) {
         g_alpine_game_config.gamepad_rumble_intensity = std::clamp(std::stof(settings["GamepadRumble"]), 0.0f, 1.0f);
@@ -1413,6 +1417,7 @@ void alpine_control_config_serialize(std::ofstream& file, const rf::ControlConfi
     file << "GamepadJoyInvertY=" << g_alpine_game_config.gamepad_joy_invert_y << "\n";
     file << "GamepadTrackpadSensitivity=" << g_alpine_game_config.gamepad_trackpad_sensitivity << "\n";
     file << "GamepadSwapSticks=" << g_alpine_game_config.gamepad_swap_sticks << "\n";
+    file << "GamepadSwapTrackpads=" << g_alpine_game_config.gamepad_swap_trackpads << "\n";
     file << "GamepadRumble=" << g_alpine_game_config.gamepad_rumble_intensity << "\n";
     file << "GamepadWeaponRumble=" << g_alpine_game_config.gamepad_weapon_rumble_enabled << "\n";
     file << "GamepadEnvironmentalRumble=" << g_alpine_game_config.gamepad_environmental_rumble_enabled << "\n";

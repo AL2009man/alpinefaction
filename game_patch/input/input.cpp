@@ -16,6 +16,8 @@ void sdl_input_poll()
         case SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION:
         case SDL_EVENT_GAMEPAD_TOUCHPAD_UP:
         case SDL_EVENT_GAMEPAD_SENSOR_UPDATE:
+        case SDL_EVENT_GAMEPAD_CAPSENSE_TOUCH:
+        case SDL_EVENT_GAMEPAD_CAPSENSE_RELEASE:
             process_gamepad_event(ev);
             break;
         default:

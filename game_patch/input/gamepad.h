@@ -55,3 +55,6 @@ bool gamepad_has_pending_rebind(); // true if a gamepad button/trigger was captu
 
 // Returns and clears any pending scroll delta produced by the right-stick menu scroll tick (+1=up, -1=down, 0=none)
 int gamepad_consume_menu_scroll();
+
+// Returns true if a finger is currently touching the (single) touchpad
+bool gamepad_is_touchpad_touched();

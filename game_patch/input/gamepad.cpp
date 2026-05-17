@@ -121,6 +121,14 @@ static int   g_touchpad_btn_pad = -1;  // touchpad index of the active finger-0 
 static float g_touchpad_cam_dx  = 0.0f;
 static float g_touchpad_cam_dy  = 0.0f;
 
+// Physical touchpad index for camera (1) vs scroll (0) — flipped by gamepad_swap_trackpads.
+static int dual_cam_pad_idx()    { return g_alpine_game_config.gamepad_swap_trackpads ? 0 : 1; }
+static int dual_scroll_pad_idx() { return g_alpine_game_config.gamepad_swap_trackpads ? 1 : 0; }
+
+// Capacitive sense state (left/right stick touch, e.g. Steam Deck, HORIPad for Steam)
+static bool g_capsense_left_stick  = false;
+static bool g_capsense_right_stick = false;
+
 static float g_move_lx = 0.0f, g_move_ly = 0.0f;
 static float g_move_mag = 0.0f;
 
@@ -226,6 +234,8 @@ static void reset_gamepad_input_state()
     g_touchpad_btn_pad = -1;
     g_touchpad_cam_dx  = 0.0f;
     g_touchpad_cam_dy  = 0.0f;
+    g_capsense_left_stick  = false;
+    g_capsense_right_stick = false;
     g_menu_cursor_accum_x = 0.0f;
     g_gyro_menu_cursor_active = false;
     g_lt_was_down = false;
@@ -544,7 +554,7 @@ static bool menu_nav_on_button_down(int btn)
     }
     switch (btn) {
     case SDL_GAMEPAD_BUTTON_TOUCHPAD:
-        if (g_has_dual_trackpads && g_touchpad_btn_pad != 1) return true;
+        if (g_has_dual_trackpads && g_touchpad_btn_pad != dual_cam_pad_idx()) return true;
         menu_nav_handle_confirm();
         return true;
     case SDL_GAMEPAD_BUTTON_DPAD_UP:
@@ -568,7 +578,7 @@ static void menu_nav_on_button_up(int btn)
     if (btn == g_menu_nav.repeat_btn)
         g_menu_nav.repeat_btn = -1;
     if (btn == static_cast<int>(get_menu_confirm_button())
-        || (btn == SDL_GAMEPAD_BUTTON_TOUCHPAD && (!g_has_dual_trackpads || g_touchpad_btn_pad == 1)))
+        || (btn == SDL_GAMEPAD_BUTTON_TOUCHPAD && (!g_has_dual_trackpads || g_touchpad_btn_pad == dual_cam_pad_idx())))
         menu_nav_release_click();
 }
 
@@ -897,14 +907,14 @@ static void handle_gamepad_touchpad_down(const SDL_GamepadTouchpadEvent& ev)
 {
     if (!is_gamepad_input_active() || SDL_GetGamepadID(g_gamepad) != ev.which) return;
     if (ev.finger == 0) g_touchpad_btn_pad = ev.touchpad;
-    if (g_has_dual_trackpads && ev.touchpad == 0 && ev.finger == 0) {
+    if (g_has_dual_trackpads && ev.touchpad == dual_scroll_pad_idx() && ev.finger == 0) {
         g_trackpad_left.active = true;
         g_trackpad_left.last_y = ev.y;
         g_trackpad_left_scroll_accum = 0.0f;
         set_last_input_gamepad(true);
         return;
     }
-    if (ev.touchpad != (g_has_dual_trackpads ? 1 : 0) || ev.finger != 0) return;
+    if (ev.touchpad != (g_has_dual_trackpads ? dual_cam_pad_idx() : 0) || ev.finger != 0) return;
     if (g_message_log_close_cooldown > 0.0f) return;
     g_touchpad.active            = true;
     g_touchpad.skip_first_motion = true;
@@ -919,14 +929,14 @@ static void handle_gamepad_touchpad_motion(const SDL_GamepadTouchpadEvent& ev)
 {
     if (!is_gamepad_input_active() || SDL_GetGamepadID(g_gamepad) != ev.which) return;
 
-    // Left pad (dual-trackpad devices): scroll only.
-    if (g_has_dual_trackpads && ev.touchpad == 0 && ev.finger == 0 && g_trackpad_left.active) {
+    // Scroll pad (dual-trackpad devices): scroll only.
+    if (g_has_dual_trackpads && ev.touchpad == dual_scroll_pad_idx() && ev.finger == 0 && g_trackpad_left.active) {
         handle_trackpad_left_scroll(ev);
         return;
     }
 
-    // Right pad (dual-trackpad) or only pad (single-touchpad): cursor or camera.
-    if (ev.touchpad != (g_has_dual_trackpads ? 1 : 0) || ev.finger != 0) return;
+    // Camera pad (dual-trackpad) or only pad (single-touchpad): cursor or camera.
+    if (ev.touchpad != (g_has_dual_trackpads ? dual_cam_pad_idx() : 0) || ev.finger != 0) return;
     if (!g_touchpad.active) return;
 
     float dx, dy;
@@ -946,13 +956,31 @@ static void handle_gamepad_touchpad_up(const SDL_GamepadTouchpadEvent& ev)
 {
     if (!is_gamepad_input_active() || SDL_GetGamepadID(g_gamepad) != ev.which) return;
     if (ev.finger == 0) g_touchpad_btn_pad = -1;
-    if (g_has_dual_trackpads && ev.touchpad == 0 && ev.finger == 0) {
+    if (g_has_dual_trackpads && ev.touchpad == dual_scroll_pad_idx() && ev.finger == 0) {
         g_trackpad_left.active = false;
         g_trackpad_left_scroll_accum = 0.0f;
         return;
     }
-    if (ev.touchpad != (g_has_dual_trackpads ? 1 : 0) || ev.finger != 0) return;
+    if (ev.touchpad != (g_has_dual_trackpads ? dual_cam_pad_idx() : 0) || ev.finger != 0) return;
     g_touchpad.active = false;
+}
+
+static void handle_gamepad_capsense(const SDL_GamepadCapSenseEvent& ev)
+{
+    if (!is_gamepad_input_active() || SDL_GetGamepadID(g_gamepad) != ev.which) return;
+    switch (static_cast<SDL_GamepadCapSenseType>(ev.capsense)) {
+    case SDL_GAMEPAD_CAPSENSE_LEFT_STICK:  g_capsense_left_stick  = ev.down; break;
+    case SDL_GAMEPAD_CAPSENSE_RIGHT_STICK: g_capsense_right_stick = ev.down; break;
+    default: break;
+    }
+}
+
+bool gamepad_is_touchpad_touched()
+{
+    bool cam_stick_capsense = g_alpine_game_config.gamepad_swap_sticks
+        ? g_capsense_left_stick
+        : g_capsense_right_stick;
+    return g_touchpad.active || cam_stick_capsense;
 }
 
 static void handle_gamepad_sensor_update(const SDL_GamepadSensorEvent& ev)
@@ -1021,6 +1049,10 @@ void process_gamepad_event(const SDL_Event& ev)
         break;
     case SDL_EVENT_GAMEPAD_SENSOR_UPDATE:
         handle_gamepad_sensor_update(ev.gsensor);
+        break;
+    case SDL_EVENT_GAMEPAD_CAPSENSE_TOUCH:
+    case SDL_EVENT_GAMEPAD_CAPSENSE_RELEASE:
+        handle_gamepad_capsense(ev.gcapsense);
         break;
     default:
         break;
@@ -1361,8 +1393,7 @@ void consume_raw_gamepad_deltas(float& pitch_delta, float& yaw_delta)
         }
     }
 
-    bool cam_pad_active = g_has_dual_trackpads
-        && (g_alpine_game_config.gamepad_swap_sticks ? g_trackpad_left.active : g_touchpad.active);
+    bool cam_pad_active = g_has_dual_trackpads && g_touchpad.active;
     if (!cam_pad_active) {
         if (g_alpine_game_config.gamepad_joy_camera && !is_freelook && !is_scoped_or_scanning) {
             gamepad_apply_flickstick(cam_x, cam_y, yaw_delta, pitch_delta);
@@ -1881,6 +1912,16 @@ ConsoleCommand2 gamepad_prompts_cmd{
     "gamepad_prompts [0-9]",
 };
 
+ConsoleCommand2 swap_trackpads_cmd{
+    "swap_trackpads",
+    [](std::optional<int> val) {
+        if (val) g_alpine_game_config.gamepad_swap_trackpads = *val != 0;
+        rf::console::print("Swap trackpads: {}", g_alpine_game_config.gamepad_swap_trackpads ? "enabled" : "disabled");
+    },
+    "Swap camera and scroll trackpads on dual-trackpad devices (default 0)",
+    "swap_trackpads [0|1]",
+};
+
 ConsoleCommand2 joy_reconnect_cmd{
     "joy_reset",
     [](std::optional<int>) {
@@ -2270,6 +2311,7 @@ void gamepad_apply_patch()
     trackpad_sens_cmd.register_cmd();
     trackpad_scope_sens_cmd.register_cmd();
     trackpad_scanner_sens_cmd.register_cmd();
+    swap_trackpads_cmd.register_cmd();    
     joy_flickstick_cmd.register_cmd();
     joy_flickstick_sweep_cmd.register_cmd();
     joy_flickstick_smoothing_cmd.register_cmd();

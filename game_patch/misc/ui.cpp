@@ -1097,7 +1097,7 @@ void ao_gyro_autocalibration_cbox_on_click([[maybe_unused]] int x, [[maybe_unuse
 }
 
 void ao_gyro_modifier_mode_cbox_on_click([[maybe_unused]] int x, [[maybe_unused]] int y) {
-    g_alpine_game_config.gamepad_gyro_modifier_mode = (g_alpine_game_config.gamepad_gyro_modifier_mode + 1) % 4;
+    g_alpine_game_config.gamepad_gyro_modifier_mode = (g_alpine_game_config.gamepad_gyro_modifier_mode + 1) % 6;
     ao_play_button_snd(true);
 }
 
@@ -1107,7 +1107,7 @@ void ao_gyro_space_cbox_on_click([[maybe_unused]] int x, [[maybe_unused]] int y)
 }
 
 void ao_gamepad_icon_override_cbox_on_click([[maybe_unused]] int x, [[maybe_unused]] int y) {
-    g_alpine_game_config.gamepad_icon_override = (g_alpine_game_config.gamepad_icon_override + 1) % 11;
+    g_alpine_game_config.gamepad_icon_override = (g_alpine_game_config.gamepad_icon_override + 1) % 10;
     ao_play_button_snd(true);
     g_alpine_options_hud_dirty = true;
 }
@@ -2163,9 +2163,9 @@ void alpine_options_panel_do_frame(int x)
     ao_gyro_autocalibration_butlabel.text  = ao_gyro_autocalibration_butlabel_text;
     ao_gyro_autocalibration_butlabel.align = rf::gr::ALIGN_CENTER;
 
-    static const char* gyro_modifier_mode_names[] = {"Always", "Hold (Off)", "Hold (On)", "Toggle"};
+    static const char* gyro_modifier_mode_names[] = {"Always", "Hold (Off)", "Hold (On)", "Toggle", "Touch (On)", "Touch (Off)"};
     snprintf(ao_gyro_modifier_mode_butlabel_text, sizeof(ao_gyro_modifier_mode_butlabel_text), "%s",
-        gyro_modifier_mode_names[std::clamp(g_alpine_game_config.gamepad_gyro_modifier_mode, 0, 3)]);
+        gyro_modifier_mode_names[std::clamp(g_alpine_game_config.gamepad_gyro_modifier_mode, 0, 5)]);
     ao_gyro_modifier_mode_butlabel.text  = ao_gyro_modifier_mode_butlabel_text;
     ao_gyro_modifier_mode_butlabel.align = rf::gr::ALIGN_CENTER;
 
@@ -2185,8 +2185,8 @@ void alpine_options_panel_do_frame(int x)
     ao_rumble_filter_butlabel.text = ao_rumble_filter_butlabel_text;
     ao_rumble_filter_butlabel.align = rf::gr::ALIGN_CENTER;
 
-    static const char* gamepad_icon_names[] = {"auto", "generic", "xbox360", "xboxone", "ds3", "ds4", "dualsense", "ns switch", "gamecube", "steam", "sclegacy"};
-    int gamepad_icon_index = std::clamp(g_alpine_game_config.gamepad_icon_override, 0, 10);
+    static const char* gamepad_icon_names[] = {"auto", "generic", "xbox360", "xboxone", "ds3", "ds4", "dualsense", "ns switch", "gamecube", "steam"};
+    int gamepad_icon_index = std::clamp(g_alpine_game_config.gamepad_icon_override, 0, 9);
     if (gamepad_icon_index == 0) {
         snprintf(ao_gamepad_icon_override_butlabel_text, sizeof(ao_gamepad_icon_override_butlabel_text), " auto ");
     } else {
