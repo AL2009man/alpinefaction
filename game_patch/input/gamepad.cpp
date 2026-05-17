@@ -128,6 +128,8 @@ static int dual_scroll_pad_idx() { return g_alpine_game_config.gamepad_swap_trac
 // Capacitive sense state (left/right stick touch, e.g. Steam Deck, HORIPad for Steam)
 static bool g_capsense_left_stick  = false;
 static bool g_capsense_right_stick = false;
+static bool g_capsense_left_grip   = false;
+static bool g_capsense_right_grip  = false;
 
 static float g_move_lx = 0.0f, g_move_ly = 0.0f;
 static float g_move_mag = 0.0f;
@@ -236,6 +238,8 @@ static void reset_gamepad_input_state()
     g_touchpad_cam_dy  = 0.0f;
     g_capsense_left_stick  = false;
     g_capsense_right_stick = false;
+    g_capsense_left_grip   = false;
+    g_capsense_right_grip  = false;
     g_menu_cursor_accum_x = 0.0f;
     g_gyro_menu_cursor_active = false;
     g_lt_was_down = false;
@@ -971,6 +975,8 @@ static void handle_gamepad_capsense(const SDL_GamepadCapSenseEvent& ev)
     switch (static_cast<SDL_GamepadCapSenseType>(ev.capsense)) {
     case SDL_GAMEPAD_CAPSENSE_LEFT_STICK:  g_capsense_left_stick  = ev.down; break;
     case SDL_GAMEPAD_CAPSENSE_RIGHT_STICK: g_capsense_right_stick = ev.down; break;
+    case SDL_GAMEPAD_CAPSENSE_LEFT_GRIP:   g_capsense_left_grip   = ev.down; break;
+    case SDL_GAMEPAD_CAPSENSE_RIGHT_GRIP:  g_capsense_right_grip  = ev.down; break;
     default: break;
     }
 }
@@ -980,7 +986,9 @@ bool gamepad_is_touchpad_touched()
     bool cam_stick_capsense = g_alpine_game_config.gamepad_swap_sticks
         ? g_capsense_left_stick
         : g_capsense_right_stick;
-    return g_touchpad.active || cam_stick_capsense;
+    bool grip_capsense = g_alpine_game_config.gamepad_gyro_gripsense
+        && (g_capsense_left_grip || g_capsense_right_grip);
+    return g_touchpad.active || cam_stick_capsense || grip_capsense;
 }
 
 static void handle_gamepad_sensor_update(const SDL_GamepadSensorEvent& ev)
@@ -1922,6 +1930,16 @@ ConsoleCommand2 swap_trackpads_cmd{
     "swap_trackpads [0|1]",
 };
 
+ConsoleCommand2 gyro_gripsense{
+    "gyro_gripsense",
+    [](std::optional<int> val) {
+        if (val) g_alpine_game_config.gamepad_gyro_gripsense = *val != 0;
+        rf::console::print("Gripsense: {}", g_alpine_game_config.gamepad_gyro_gripsense ? "enabled" : "disabled");
+    },
+    "Enable Gripsense as a gyro touch activator (default 0)",
+    "gyro_gripsense [0|1]",
+};
+
 ConsoleCommand2 joy_reconnect_cmd{
     "joy_reset",
     [](std::optional<int>) {
@@ -2311,7 +2329,8 @@ void gamepad_apply_patch()
     trackpad_sens_cmd.register_cmd();
     trackpad_scope_sens_cmd.register_cmd();
     trackpad_scanner_sens_cmd.register_cmd();
-    swap_trackpads_cmd.register_cmd();    
+    swap_trackpads_cmd.register_cmd();
+    gyro_gripsense.register_cmd();    
     joy_flickstick_cmd.register_cmd();
     joy_flickstick_sweep_cmd.register_cmd();
     joy_flickstick_smoothing_cmd.register_cmd();
