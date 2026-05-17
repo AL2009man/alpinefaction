@@ -99,17 +99,17 @@ struct TouchpadState {
 
     bool compute_delta(float new_x, float new_y, float& out_dx, float& out_dy)
     {
+        if (skip_first_motion) {
+            skip_first_motion = false;
+            last_x = new_x;
+            last_y = new_y;
+            out_dx = out_dy = 0.0f;
+            return false;
+        }
         out_dx = new_x - last_x;
         out_dy = new_y - last_y;
         last_x = new_x;
         last_y = new_y;
-
-        if (skip_first_motion) {
-            skip_first_motion = false;
-            out_dx = out_dy = 0.0f;
-            return false;
-        }
-
         return true;
     }
 };
@@ -869,6 +869,30 @@ static void handle_gamepad_axis_motion(const SDL_GamepadAxisEvent& ev)
     }
 }
 
+// Handles left-pad vertical swipe for menu scroll (dual-trackpad devices only).
+static void handle_trackpad_left_scroll(const SDL_GamepadTouchpadEvent& ev)
+{
+    if (g_message_log_close_cooldown > 0.0f) return;
+    if (!is_gamepad_menu_navigation_state()) return;
+    float dy = ev.y - g_trackpad_left.last_y;
+    g_trackpad_left.last_y = ev.y;
+    g_trackpad_left_scroll_accum += dy;
+    constexpr float k_scroll_threshold = 0.05f;
+    if (g_trackpad_left_scroll_accum >= k_scroll_threshold) {
+        g_trackpad_left_scroll_accum -= k_scroll_threshold;
+        g_pending_scroll_delta = -1;
+        rf::mouse_dz = -1;
+        if (rf::gameseq_get_state() == rf::GS_MESSAGE_LOG)
+            rf::ui::message_log_down_on_click(-1, -1);
+    } else if (g_trackpad_left_scroll_accum <= -k_scroll_threshold) {
+        g_trackpad_left_scroll_accum += k_scroll_threshold;
+        g_pending_scroll_delta = 1;
+        rf::mouse_dz = 1;
+        if (rf::gameseq_get_state() == rf::GS_MESSAGE_LOG)
+            rf::ui::message_log_up_on_click(-1, -1);
+    }
+}
+
 static void handle_gamepad_touchpad_down(const SDL_GamepadTouchpadEvent& ev)
 {
     if (!is_gamepad_input_active() || SDL_GetGamepadID(g_gamepad) != ev.which) return;
@@ -894,30 +918,17 @@ static void handle_gamepad_touchpad_down(const SDL_GamepadTouchpadEvent& ev)
 static void handle_gamepad_touchpad_motion(const SDL_GamepadTouchpadEvent& ev)
 {
     if (!is_gamepad_input_active() || SDL_GetGamepadID(g_gamepad) != ev.which) return;
+
+    // Left pad (dual-trackpad devices): scroll only.
     if (g_has_dual_trackpads && ev.touchpad == 0 && ev.finger == 0 && g_trackpad_left.active) {
-        if (g_message_log_close_cooldown > 0.0f) return;
-        if (!is_gamepad_menu_navigation_state()) return;
-        float dy = ev.y - g_trackpad_left.last_y;
-        g_trackpad_left.last_y = ev.y;
-        g_trackpad_left_scroll_accum += dy;
-        constexpr float k_scroll_threshold = 0.05f;
-        if (g_trackpad_left_scroll_accum >= k_scroll_threshold) {
-            g_trackpad_left_scroll_accum -= k_scroll_threshold;
-            g_pending_scroll_delta = -1;
-            rf::mouse_dz = -1;
-            if (rf::gameseq_get_state() == rf::GS_MESSAGE_LOG)
-                rf::ui::message_log_down_on_click(-1, -1);
-        } else if (g_trackpad_left_scroll_accum <= -k_scroll_threshold) {
-            g_trackpad_left_scroll_accum += k_scroll_threshold;
-            g_pending_scroll_delta = 1;
-            rf::mouse_dz = 1;
-            if (rf::gameseq_get_state() == rf::GS_MESSAGE_LOG)
-                rf::ui::message_log_up_on_click(-1, -1);
-        }
+        handle_trackpad_left_scroll(ev);
         return;
     }
+
+    // Right pad (dual-trackpad) or only pad (single-touchpad): cursor or camera.
     if (ev.touchpad != (g_has_dual_trackpads ? 1 : 0) || ev.finger != 0) return;
     if (!g_touchpad.active) return;
+
     float dx, dy;
     if (!g_touchpad.compute_delta(ev.x, ev.y, dx, dy)) return;
     if (g_message_log_close_cooldown > 0.0f) return;
@@ -1859,15 +1870,15 @@ ConsoleCommand2 gamepad_prompts_cmd{
         static const char* icon_names[] = {
             "Auto", "Generic", "Xbox 360 Controller", "Xbox Wireless Controller",
             "DualShock 3", "DualShock 4", "DualSense", "Nintendo Switch Controller", "Nintendo GameCube Controller",
-            "Steam", "Steam Controller (2015)",
+            "Steam",
         };
-        if (val) g_alpine_game_config.gamepad_icon_override = std::clamp(val.value(), 0, 10);
+        if (val) g_alpine_game_config.gamepad_icon_override = std::clamp(val.value(), 0, 9);
         rf::console::print("Gamepad icons: {} ({})",
             icon_names[g_alpine_game_config.gamepad_icon_override],
             g_alpine_game_config.gamepad_icon_override);
     },
-    "Set gamepad button icon style: 0=Auto, 1=Generic, 2=Xbox 360 Controller, 3=Xbox Wireless Controller, 4=DualShock 3, 5=DualShock 4, 6=DualSense, 7=Nintendo Switch Controller, 8=Nintendo GameCube Controller, 9=Steam, 10=SteamControllerLegacy",
-    "gamepad_prompts [0-10]",
+    "Set gamepad button icon style: 0=Auto, 1=Generic, 2=Xbox 360 Controller, 3=Xbox Wireless Controller, 4=DualShock 3, 5=DualShock 4, 6=DualSense, 7=Nintendo Switch Controller, 8=Nintendo GameCube Controller, 9=Steam",
+    "gamepad_prompts [0-9]",
 };
 
 ConsoleCommand2 joy_reconnect_cmd{

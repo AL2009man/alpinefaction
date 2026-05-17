@@ -133,16 +133,6 @@ static const ButtonOverride steamdeck_overrides[] = {
     { 15, "..."   },   // Quick Access button
 };
 
-static const ButtonOverride steamcontroller_overrides[] = {
-    {  4, "Back"                 },
-    {  5, "Steam"                },
-    {  6, "Start"                },
-    {  7, "Stick Click"          },
-    {  8, "Right Trackpad Click" },
-    { 16, "RG"                   },  // Right grip
-    { 17, "LG"                   },  // Left grip
-};
-
 const char* gamepad_get_button_name(int button_idx)
 {
     static const char* names[] = {
@@ -195,9 +185,7 @@ static SDL_GamepadType icon_type_to_sdl(ControllerIconType icon)
 #if SDL_VERSION_ATLEAST(3, 2, 0)
         case ControllerIconType::NintendoGameCube: return SDL_GAMEPAD_TYPE_GAMECUBE;
 #endif
-        // Steam devices use Xbox-style A/B/X/Y face labels
-        case ControllerIconType::SteamControllerLegacy:
-        case ControllerIconType::Steam:        return SDL_GAMEPAD_TYPE_XBOXONE;
+        case ControllerIconType::Steam:            return SDL_GAMEPAD_TYPE_STEAM;
         default:                                   return SDL_GAMEPAD_TYPE_UNKNOWN;
     }
 }
@@ -218,6 +206,7 @@ static ControllerIconType sdl_type_to_icon(SDL_GamepadType type)
 #if SDL_VERSION_ATLEAST(3, 2, 0)
         case SDL_GAMEPAD_TYPE_GAMECUBE:                      return ControllerIconType::NintendoGameCube;
 #endif
+        case SDL_GAMEPAD_TYPE_STEAM:                         return ControllerIconType::Steam;
         default:                                             return ControllerIconType::Generic;
     }
 }
@@ -278,11 +267,6 @@ const char* gamepad_get_button_display_name(ControllerIconType type, int button_
         case ControllerIconType::NintendoGameCube:
             result = search_overrides(gamecube_overrides, button_idx);
             break;
-        case ControllerIconType::SteamControllerLegacy:
-            result = search_overrides(steamcontroller_overrides, button_idx);
-            if (result) return result;
-            result = search_overrides(xboxone_overrides, button_idx);  // LB/RB/LT/RT
-            break;
         case ControllerIconType::Steam:
             result = search_overrides(steamdeck_overrides, button_idx);
             break;
@@ -310,7 +294,7 @@ const char* gamepad_get_effective_display_name(ControllerIconType icon_pref, SDL
     ControllerIconType type;
     if (icon_pref == ControllerIconType::Auto) {
         SDL_GamepadType sdl_type = ctrl ? SDL_GetGamepadType(ctrl) : SDL_GAMEPAD_TYPE_UNKNOWN;
-        type = get_steam_virtual_controller_detection(ctrl, sdl_type_to_icon(sdl_type));
+        type = sdl_type_to_icon(sdl_type);
     } else {
         type = icon_pref;
     }

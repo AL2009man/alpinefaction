@@ -1,12 +1,11 @@
-# Pinned to a specific SDL3 master commit for stability.
-# To update, change GIT_TAG to the desired commit SHA, branch, or release tag (e.g. "release-3.x.y").
+# Tracking the SDL3 release-3.4.x branch.
 # Read the sdl wiki for more info about CMake-configurations: https://wiki.libsdl.org/SDL3/README-cmake
 
 include(FetchContent)
 FetchContent_Declare(
     SDL3
     GIT_REPOSITORY "https://github.com/libsdl-org/SDL.git"
-    GIT_TAG        5e483dc16626b937f24bc10c90dedf8e1e92003e
+    GIT_TAG        8c89a076a7b8c70ef2ec9af8c8169c4d6775d68e
 )
 
 set(SDL_STATIC ON  CACHE BOOL "" FORCE)
