@@ -126,11 +126,13 @@ static const ButtonOverride gamecube_overrides[] = {
     { 27, "R"       },
 };
 
-static const ButtonOverride steamdeck_overrides[] = {
-    {  4, "View"  },
-    {  5, "Steam" },
-    {  6, "Menu"  },
-    { 15, "..."   },   // Quick Access button
+static const ButtonOverride steam_overrides[] = {
+    {  4, "View"               },
+    {  5, "Steam"              },
+    {  6, "Menu"               },
+    { 15, "Quick Access"       },  // QAM button 
+    { 20, "Right Trackpad Click"    },  // Right Trackpad 
+    { 21, "Left Trackpad Click"     },  // Left Trackpad 
 };
 
 const char* gamepad_get_button_name(int button_idx)
@@ -268,7 +270,7 @@ const char* gamepad_get_button_display_name(ControllerIconType type, int button_
             result = search_overrides(gamecube_overrides, button_idx);
             break;
         case ControllerIconType::Steam:
-            result = search_overrides(steamdeck_overrides, button_idx);
+            result = search_overrides(steam_overrides, button_idx);
             break;
         default:
             break;
