@@ -345,4 +345,8 @@ target_link_libraries(AlpineFaction
     freetype
     stb_vorbis
     stb_image
+    SDL3::SDL3
+    setupapi
+    imm32
+    cfgmgr32
 )
