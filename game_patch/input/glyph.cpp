@@ -184,9 +184,7 @@ static SDL_GamepadType icon_type_to_sdl(ControllerIconType icon)
         case ControllerIconType::PS4:              return SDL_GAMEPAD_TYPE_PS4;
         case ControllerIconType::PS5:              return SDL_GAMEPAD_TYPE_PS5;
         case ControllerIconType::NintendoSwitch:   return SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO;
-#if SDL_VERSION_ATLEAST(3, 2, 0)
         case ControllerIconType::NintendoGameCube: return SDL_GAMEPAD_TYPE_GAMECUBE;
-#endif
         case ControllerIconType::Steam:            return SDL_GAMEPAD_TYPE_STEAM;
         default:                                   return SDL_GAMEPAD_TYPE_UNKNOWN;
     }
@@ -205,9 +203,7 @@ static ControllerIconType sdl_type_to_icon(SDL_GamepadType type)
         case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
         case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
         case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:  return ControllerIconType::NintendoSwitch;
-#if SDL_VERSION_ATLEAST(3, 2, 0)
         case SDL_GAMEPAD_TYPE_GAMECUBE:                      return ControllerIconType::NintendoGameCube;
-#endif
         case SDL_GAMEPAD_TYPE_STEAM:                         return ControllerIconType::Steam;
         default:                                             return ControllerIconType::Generic;
     }
