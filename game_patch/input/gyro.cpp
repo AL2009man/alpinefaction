@@ -213,6 +213,8 @@ static bool g_gyro_toggle_prev_down = false;
 //   3 = Toggle  -> button press flips on/off (starts on)
 //   4 = TouchOn -> active while touchpad is touched (binding ignored)
 //   5 = TouchOff-> active while touchpad is NOT touched (binding ignored)
+//   6 = GripOn  -> active while grip capsense held (gripsense setting applies; binding ignored)
+//   7 = GripOff -> active while grip capsense NOT held (gripsense setting applies; binding ignored)
 bool gyro_modifier_is_active()
 {
     using namespace rf;
@@ -221,7 +223,7 @@ bool gyro_modifier_is_active()
 
     const auto action = get_af_control(AlpineControlConfigAction::AF_ACTION_GYRO_MODIFIER);
 
-    int mode = std::clamp(g_alpine_game_config.gamepad_gyro_modifier_mode, 0, 5);
+    int mode = std::clamp(g_alpine_game_config.gamepad_gyro_modifier_mode, 0, 7);
 
     if (mode == 0) // Always
         return true;
@@ -231,6 +233,12 @@ bool gyro_modifier_is_active()
 
     if (mode == 5) // Touch Off
         return !gamepad_is_touchpad_touched();
+
+    if (mode == 6) // Grip On
+        return gamepad_is_grip_held();
+
+    if (mode == 7) // Grip Off
+        return !gamepad_is_grip_held();
 
     if (!gyro_action_has_binding(action))
         return true; // no modifier bound — gyro always on
@@ -258,16 +266,21 @@ ConsoleCommand2 gyro_modifier_mode_cmd{
     "gyro_modifier_mode",
     [](std::optional<int> val) {
         if (val) {
-            g_alpine_game_config.gamepad_gyro_modifier_mode = std::clamp(val.value(), 0, 5);
+            int new_mode = std::clamp(val.value(), 0, 7);
+            if (new_mode >= 6 && !gamepad_has_capsense_grip()) {
+                rf::console::print("Gyro modifier mode {}: capsense grip not supported for this controller", new_mode);
+                return;
+            }
+            g_alpine_game_config.gamepad_gyro_modifier_mode = new_mode;
             g_gyro_toggle_state = true;
             g_gyro_toggle_prev_down = false;
         }
         int mode = g_alpine_game_config.gamepad_gyro_modifier_mode;
-        static const char* mode_names[] = {"Always", "Hold Off", "Hold On", "Toggle", "Touch On", "Touch Off"};
+        static const char* mode_names[] = {"Always", "Hold Off", "Hold On", "Toggle", "Touch On", "Touch Off", "Grip On", "Grip Off"};
         rf::console::print("Gyro modifier mode: {} ({})", mode_names[mode], mode);
     },
-    "Set gyro modifier mode: 0=Always, 1=Hold Off, 2=Hold On, 3=Toggle, 4=Touch On, 5=Touch Off (default 0)",
-    "gyro_modifier_mode [0|1|2|3|4|5]",
+    "Set gyro modifier mode: 0=Always, 1=Hold Off, 2=Hold On, 3=Toggle, 4=Touch On, 5=Touch Off, 6=Grip On, 7=Grip Off (default 0)",
+    "gyro_modifier_mode [0|1|2|3|4|5|6|7]",
 };
 
 ConsoleCommand2 gyro_autocalibration_cmd{

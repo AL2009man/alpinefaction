@@ -60,3 +60,5 @@ int gamepad_consume_menu_scroll();
 
 // Returns true if a finger is currently touching the (single) touchpad
 bool gamepad_is_touchpad_touched();
+// Returns true if grip capsense is active (respects gamepad_gyro_gripsense setting; ignores touchpad and stick caps)
+bool gamepad_is_grip_held();

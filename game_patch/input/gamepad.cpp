@@ -1062,19 +1062,23 @@ static void handle_gamepad_capsense(const SDL_GamepadCapSenseEvent& ev)
     }
 }
 
+bool gamepad_is_grip_held()
+{
+    switch (g_alpine_game_config.gamepad_gyro_gripsense) {
+    case 1: return g_capsense_left_grip || g_capsense_right_grip; // Any
+    case 2: return g_capsense_left_grip && g_capsense_right_grip; // Both
+    case 3: return g_capsense_left_grip;                          // Left
+    case 4: return g_capsense_right_grip;                         // Right
+    default: return false;                                         // Off
+    }
+}
+
 bool gamepad_is_touchpad_touched()
 {
     bool cam_stick_capsense = g_alpine_game_config.gamepad_swap_sticks
         ? g_capsense_left_stick
         : g_capsense_right_stick;
-    bool grip_capsense = false;
-    switch (g_alpine_game_config.gamepad_gyro_gripsense) {
-    case 1: grip_capsense = g_capsense_left_grip || g_capsense_right_grip; break; // Any
-    case 2: grip_capsense = g_capsense_left_grip && g_capsense_right_grip; break; // Both
-    case 3: grip_capsense = g_capsense_left_grip;                          break; // Left
-    case 4: grip_capsense = g_capsense_right_grip;                         break; // Right
-    }
-    return g_touchpad.active || cam_stick_capsense || grip_capsense;
+    return g_touchpad.active || cam_stick_capsense || gamepad_is_grip_held();
 }
 
 static void handle_gamepad_sensor_update(const SDL_GamepadSensorEvent& ev)
@@ -1651,6 +1655,18 @@ FunHook<void(rf::Entity*)> physics_simulate_entity_hook{
                 float pitch_sign = g_alpine_game_config.gamepad_gyro_invert_y ? -1.0f : 1.0f;
                 entity->ai.ci.rot.y += std::clamp(-gyro_yaw * gyro_to_rot * sens, -1.0f, 1.0f);
                 entity->ai.ci.rot.x += std::clamp(pitch_sign * gyro_pitch * gyro_to_rot * sens, -1.0f, 1.0f);
+            }
+
+            // Convert swipe fraction to ±1.0 rot units (pi/2 rad = 1.0).
+            if (g_has_dual_trackpads && (g_touchpad_cam_dx != 0.0f || g_touchpad_cam_dy != 0.0f)) {
+                constexpr float deg2rad = 3.14159265f / 180.0f;
+                constexpr float trackpad_to_rot = 2.0f / 3.14159265f; // pi/2 rad = 1.0 rot unit
+                float sens = g_alpine_game_config.gamepad_trackpad_sensitivity * deg2rad * trackpad_to_rot;
+                float invert = g_alpine_game_config.gamepad_trackpad_invert_y ? 1.0f : -1.0f;
+                entity->ai.ci.rot.y += std::clamp(g_touchpad_cam_dx * sens, -1.0f, 1.0f);
+                entity->ai.ci.rot.x += std::clamp(invert * g_touchpad_cam_dy * sens, -1.0f, 1.0f);
+                g_touchpad_cam_dx = 0.0f;
+                g_touchpad_cam_dy = 0.0f;
             }
         }
 

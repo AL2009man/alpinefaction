@@ -1181,7 +1181,10 @@ void ao_gyro_autocalibration_cbox_on_click([[maybe_unused]] int x, [[maybe_unuse
 }
 
 void ao_gyro_modifier_mode_cbox_on_click([[maybe_unused]] int x, [[maybe_unused]] int y) {
-    g_alpine_game_config.gamepad_gyro_modifier_mode = (g_alpine_game_config.gamepad_gyro_modifier_mode + 1) % 6;
+    int next = (g_alpine_game_config.gamepad_gyro_modifier_mode + 1) % 8;
+    if (next >= 6 && !gamepad_has_capsense_grip())
+        next = 0;
+    g_alpine_game_config.gamepad_gyro_modifier_mode = next;
     ao_play_button_snd(true);
 }
 
@@ -2291,9 +2294,9 @@ void alpine_options_panel_do_frame(int x)
     ao_gyro_autocalibration_butlabel.text  = ao_gyro_autocalibration_butlabel_text;
     ao_gyro_autocalibration_butlabel.align = rf::gr::ALIGN_CENTER;
 
-    static const char* gyro_modifier_mode_names[] = {"Always", "Hold (Off)", "Hold (On)", "Toggle", "Touch (On)", "Touch (Off)"};
+    static const char* gyro_modifier_mode_names[] = {"Always", "Hold (Off)", "Hold (On)", "Toggle", "Touch (On)", "Touch (Off)", "Grip (On)", "Grip (Off)"};
     snprintf(ao_gyro_modifier_mode_butlabel_text, sizeof(ao_gyro_modifier_mode_butlabel_text), "%s",
-        gyro_modifier_mode_names[std::clamp(g_alpine_game_config.gamepad_gyro_modifier_mode, 0, 5)]);
+        gyro_modifier_mode_names[std::clamp(g_alpine_game_config.gamepad_gyro_modifier_mode, 0, 7)]);
     ao_gyro_modifier_mode_butlabel.text  = ao_gyro_modifier_mode_butlabel_text;
     ao_gyro_modifier_mode_butlabel.align = rf::gr::ALIGN_CENTER;
 
@@ -2370,7 +2373,9 @@ void alpine_options_panel_do_frame(int x)
     ao_gyro_modifier_mode_butlabel.enabled = gyro_enabled;
 
     bool touch_mode = gyro_enabled && (g_alpine_game_config.gamepad_gyro_modifier_mode == 4
-                                    || g_alpine_game_config.gamepad_gyro_modifier_mode == 5);
+                                    || g_alpine_game_config.gamepad_gyro_modifier_mode == 5
+                                    || g_alpine_game_config.gamepad_gyro_modifier_mode == 6
+                                    || g_alpine_game_config.gamepad_gyro_modifier_mode == 7);
     bool gripsense_show = touch_mode && gamepad_has_capsense_grip();
     ao_gripsense_cbox.enabled   = gripsense_show;
     ao_gripsense_label.enabled  = gripsense_show;
