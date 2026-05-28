@@ -1183,6 +1183,10 @@ bool alpine_player_settings_load(rf::Player* player)
         g_alpine_game_config.gamepad_trackpad_sensitivity = std::max(0.0f, std::stof(settings["GamepadTrackpadSensitivity"]));
         processed_keys.insert("GamepadTrackpadSensitivity");
     }
+    if (settings.count("GamepadTrackpadSmoothing")) {
+        g_alpine_game_config.gamepad_trackpad_smoothing = std::clamp(std::stof(settings["GamepadTrackpadSmoothing"]), 0.0f, 100.0f);
+        processed_keys.insert("GamepadTrackpadSmoothing");
+    }
     if (settings.count("GamepadIconOverride")) {
         g_alpine_game_config.gamepad_icon_override = std::clamp(std::stoi(settings["GamepadIconOverride"]), 0, 10);
         processed_keys.insert("GamepadIconOverride");
@@ -1194,6 +1198,10 @@ bool alpine_player_settings_load(rf::Player* player)
     if (settings.count("GamepadJoyInvertY")) {
         g_alpine_game_config.gamepad_joy_invert_y = std::stoi(settings["GamepadJoyInvertY"]) != 0;
         processed_keys.insert("GamepadJoyInvertY");
+    }
+    if (settings.count("GamepadTrackpadInvertY")) {
+        g_alpine_game_config.gamepad_trackpad_invert_y = std::stoi(settings["GamepadTrackpadInvertY"]) != 0;
+        processed_keys.insert("GamepadTrackpadInvertY");
     }
     if (settings.count("GamepadSwapSticks")) {
         g_alpine_game_config.gamepad_swap_sticks = std::stoi(settings["GamepadSwapSticks"]) != 0;
@@ -1419,7 +1427,9 @@ void alpine_control_config_serialize(std::ofstream& file, const rf::ControlConfi
     file << "GamepadIconOverride=" << g_alpine_game_config.gamepad_icon_override << "\n";
     file << "InputPromptMode=" << g_alpine_game_config.input_prompt_override << "\n";
     file << "GamepadJoyInvertY=" << g_alpine_game_config.gamepad_joy_invert_y << "\n";
+    file << "GamepadTrackpadInvertY=" << g_alpine_game_config.gamepad_trackpad_invert_y << "\n";
     file << "GamepadTrackpadSensitivity=" << g_alpine_game_config.gamepad_trackpad_sensitivity << "\n";
+    file << "GamepadTrackpadSmoothing=" << g_alpine_game_config.gamepad_trackpad_smoothing << "\n";
     file << "GamepadSwapSticks=" << g_alpine_game_config.gamepad_swap_sticks << "\n";
     file << "GamepadSwapTrackpads=" << g_alpine_game_config.gamepad_swap_trackpads << "\n";
     file << "GamepadGyroGripsense=" << g_alpine_game_config.gamepad_gyro_gripsense << "\n";

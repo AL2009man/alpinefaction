@@ -209,9 +209,11 @@ struct AlpineGameSettings
     float gamepad_flickstick_release_deadzone = 0.70f;
     float gamepad_flickstick_smoothing = 0.75f;
     float gamepad_trackpad_sensitivity = 180.0f;
+    float gamepad_trackpad_smoothing = 8.0f;
     int gamepad_icon_override = 0; // 0=Auto, 1=Generic, 2=Xbox360, 3=XboxOne, 4=DS3, 5=DS4, 6=DualSense, 7=NintendoSwitch, 8=NintendoGameCube, 9=Steam, 10=SteamControllerLegacy
     int input_prompt_override = 0; // 0=Auto, 1=Controller, 2=Keyboard
     bool gamepad_joy_invert_y = false;
+    bool gamepad_trackpad_invert_y = false;
     bool gamepad_swap_sticks = false;
     bool gamepad_swap_trackpads = false; // dual-trackpad only: swap which pad is camera vs scroll
     float gamepad_rumble_intensity = 1.0f;
