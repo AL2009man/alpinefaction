@@ -278,6 +278,10 @@ static rf::ui::Checkbox ao_gyro_modifier_mode_cbox;
 static rf::ui::Label ao_gyro_modifier_mode_label;
 static rf::ui::Label ao_gyro_modifier_mode_butlabel;
 static char ao_gyro_modifier_mode_butlabel_text[12];
+static rf::ui::Checkbox ao_gripsense_cbox;
+static rf::ui::Label ao_gripsense_label;
+static rf::ui::Label ao_gripsense_butlabel;
+static char ao_gripsense_butlabel_text[8];
 static rf::ui::Checkbox ao_gyro_space_cbox;
 static rf::ui::Label ao_gyro_space_label;
 static rf::ui::Label ao_gyro_space_butlabel;
@@ -1181,6 +1185,11 @@ void ao_gyro_modifier_mode_cbox_on_click([[maybe_unused]] int x, [[maybe_unused]
     ao_play_button_snd(true);
 }
 
+void ao_gripsense_cbox_on_click([[maybe_unused]] int x, [[maybe_unused]] int y) {
+    g_alpine_game_config.gamepad_gyro_gripsense = (g_alpine_game_config.gamepad_gyro_gripsense + 1) % 5;
+    ao_play_button_snd(true);
+}
+
 void ao_gyro_space_cbox_on_click([[maybe_unused]] int x, [[maybe_unused]] int y) {
     g_alpine_game_config.gamepad_gyro_space = (g_alpine_game_config.gamepad_gyro_space + 1) % 5;
     ao_play_button_snd(true);
@@ -1989,6 +1998,9 @@ void alpine_options_panel_init() {
         &ao_gyro_modifier_mode_cbox, &ao_gyro_modifier_mode_label, &ao_gyro_modifier_mode_butlabel,
         &alpine_options_panel2, ao_gyro_modifier_mode_cbox_on_click, 280, 354, "Gyro modifier");
     alpine_options_panel_inputbox_init(
+        &ao_gripsense_cbox, &ao_gripsense_label, &ao_gripsense_butlabel,
+        &alpine_options_panel2, ao_gripsense_cbox_on_click, 280, 354, "Gripsense");
+    alpine_options_panel_inputbox_init(
         &ao_gyro_tightening_cbox, &ao_gyro_tightening_label, &ao_gyro_tightening_butlabel,
         &alpine_options_panel2, ao_gyro_tightening_cbox_on_click, 280, 354, "Gyro tightening");
     alpine_options_panel_inputbox_init(
@@ -2285,6 +2297,12 @@ void alpine_options_panel_do_frame(int x)
     ao_gyro_modifier_mode_butlabel.text  = ao_gyro_modifier_mode_butlabel_text;
     ao_gyro_modifier_mode_butlabel.align = rf::gr::ALIGN_CENTER;
 
+    static const char* gripsense_mode_names[] = {"Off", "Any", "Both", "Left", "Right"};
+    snprintf(ao_gripsense_butlabel_text, sizeof(ao_gripsense_butlabel_text), "%s",
+        gripsense_mode_names[std::clamp(g_alpine_game_config.gamepad_gyro_gripsense, 0, 4)]);
+    ao_gripsense_butlabel.text  = ao_gripsense_butlabel_text;
+    ao_gripsense_butlabel.align = rf::gr::ALIGN_CENTER;
+
     snprintf(ao_gyro_space_butlabel_text, sizeof(ao_gyro_space_butlabel_text), "%s", gyro_get_space_name(g_alpine_game_config.gamepad_gyro_space));
     ao_gyro_space_butlabel.text  = ao_gyro_space_butlabel_text;
     ao_gyro_space_butlabel.align = rf::gr::ALIGN_CENTER;
@@ -2326,6 +2344,7 @@ void alpine_options_panel_do_frame(int x)
     ao_gyro_space_butlabel.x             = 280 + 50;
     ao_gyro_autocalibration_butlabel.x   = 280 + 50;
     ao_gyro_modifier_mode_butlabel.x     = 280 + 50;
+    ao_gripsense_butlabel.x              = 280 + 50;
     ao_rumble_filter_butlabel.x          = 280 + 50;
     ao_gamepad_icon_override_butlabel.x  = 280 + 50;
     ao_input_prompt_mode_butlabel.x      = 280 + 50;
@@ -2349,6 +2368,13 @@ void alpine_options_panel_do_frame(int x)
     ao_gyro_modifier_mode_cbox.enabled     = gyro_enabled;
     ao_gyro_modifier_mode_label.enabled    = gyro_enabled;
     ao_gyro_modifier_mode_butlabel.enabled = gyro_enabled;
+
+    bool touch_mode = gyro_enabled && (g_alpine_game_config.gamepad_gyro_modifier_mode == 4
+                                    || g_alpine_game_config.gamepad_gyro_modifier_mode == 5);
+    bool gripsense_show = touch_mode && gamepad_has_capsense_grip();
+    ao_gripsense_cbox.enabled   = gripsense_show;
+    ao_gripsense_label.enabled  = gripsense_show;
+    ao_gripsense_butlabel.enabled = gripsense_show;
 
     ao_gyro_invert_y_cbox.enabled        = gyro_enabled;
     ao_gyro_invert_y_label.enabled       = gyro_enabled;
@@ -2412,6 +2438,7 @@ void alpine_options_panel_do_frame(int x)
         rc.add_inputbox(ao_gyro_scopesens_cbox, ao_gyro_scopesens_label, ao_gyro_scopesens_butlabel, gyro_enabled);
         rc.add_inputbox(ao_gyro_scannersens_cbox, ao_gyro_scannersens_label, ao_gyro_scannersens_butlabel, gyro_enabled);
         rc.add_inputbox(ao_gyro_modifier_mode_cbox, ao_gyro_modifier_mode_label, ao_gyro_modifier_mode_butlabel, gyro_enabled);
+        rc.add_inputbox(ao_gripsense_cbox, ao_gripsense_label, ao_gripsense_butlabel, gripsense_show);
         rc.add_inputbox(ao_gyro_tightening_cbox, ao_gyro_tightening_label, ao_gyro_tightening_butlabel, gyro_enabled);
         rc.add_inputbox(ao_gyro_smoothing_cbox, ao_gyro_smoothing_label, ao_gyro_smoothing_butlabel, gyro_enabled);
         rc.add_inputbox(ao_gyro_vh_mixer_cbox, ao_gyro_vh_mixer_label, ao_gyro_vh_mixer_butlabel, gyro_enabled);

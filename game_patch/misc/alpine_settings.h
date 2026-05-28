@@ -197,7 +197,7 @@ struct AlpineGameSettings
     int gamepad_gyro_autocalibration_mode = 1; // 0=Off, 1=MenuOnly, 2=Always
     int gamepad_gyro_space = 3; // GyroSpace: Yaw=0  Roll=1  Local=2  Player=3  World=4
     int gamepad_gyro_modifier_mode = 0; // 0=Always, 1=HoldOff, 2=HoldOn, 3=Toggle, 4=TouchOn, 5=TouchOff
-    bool gamepad_gyro_gripsense = false; // grip capsense (left/right) also counts as "touched" for gyro touch modes
+    int gamepad_gyro_gripsense = 0; // 0=Off, 1=Any, 2=Both, 3=Left, 4=Right
     bool gamepad_gyro_invert_y = false;
     float gamepad_gyro_tightening = 8.0f;
     float gamepad_gyro_smoothing = 7.0f;

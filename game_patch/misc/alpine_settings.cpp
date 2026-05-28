@@ -1144,7 +1144,7 @@ bool alpine_player_settings_load(rf::Player* player)
         processed_keys.insert("GamepadGyroModifierMode");
     }
     if (settings.count("GamepadGyroGripsense")) {
-        g_alpine_game_config.gamepad_gyro_gripsense = std::stoi(settings["GamepadGyroGripsense"]) != 0;
+        g_alpine_game_config.gamepad_gyro_gripsense = std::clamp(std::stoi(settings["GamepadGyroGripsense"]), 0, 4);
         processed_keys.insert("GamepadGyroGripsense");
     }
     if (settings.count("GamepadGyroInvertY")) {

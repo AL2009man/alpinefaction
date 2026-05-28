@@ -182,6 +182,7 @@ static bool g_capsense_left_stick  = false;
 static bool g_capsense_right_stick = false;
 static bool g_capsense_left_grip   = false;
 static bool g_capsense_right_grip  = false;
+static bool g_capsense_grip_supported = false; // true once any grip capsense event is received
 
 static float g_move_lx = 0.0f, g_move_ly = 0.0f;
 static float g_move_mag = 0.0f;
@@ -416,6 +417,9 @@ static void try_open_gamepad(SDL_JoystickID id)
     int num_touchpads = SDL_GetNumGamepadTouchpads(g_gamepad);
     g_has_dual_trackpads = num_touchpads >= 2;
     xlog::info("Gamepad touchpad count: {}", num_touchpads);
+    g_capsense_grip_supported = SDL_GamepadHasCapSense(g_gamepad, SDL_GAMEPAD_CAPSENSE_LEFT_GRIP)
+                             || SDL_GamepadHasCapSense(g_gamepad, SDL_GAMEPAD_CAPSENSE_RIGHT_GRIP);
+    xlog::info("Gamepad capsense grip supported: {}", g_capsense_grip_supported);
 }
 
 static void inject_action_key(int action, bool down)
@@ -791,6 +795,7 @@ static void disconnect_active_gamepad()
     g_rumble_supported         = false;
     g_trigger_rumble_supported = false;
     g_has_dual_trackpads       = false;
+    g_capsense_grip_supported  = false;
     release_movement_keys();
     for (int b = 0; b < SDL_GAMEPAD_BUTTON_COUNT; ++b) {
         inject_action_key(g_button_map[b], false);
@@ -1051,8 +1056,8 @@ static void handle_gamepad_capsense(const SDL_GamepadCapSenseEvent& ev)
     switch (static_cast<SDL_GamepadCapSenseType>(ev.capsense)) {
     case SDL_GAMEPAD_CAPSENSE_LEFT_STICK:  g_capsense_left_stick  = ev.down; break;
     case SDL_GAMEPAD_CAPSENSE_RIGHT_STICK: g_capsense_right_stick = ev.down; break;
-    case SDL_GAMEPAD_CAPSENSE_LEFT_GRIP:   g_capsense_left_grip   = ev.down; break;
-    case SDL_GAMEPAD_CAPSENSE_RIGHT_GRIP:  g_capsense_right_grip  = ev.down; break;
+    case SDL_GAMEPAD_CAPSENSE_LEFT_GRIP:   g_capsense_left_grip   = ev.down; g_capsense_grip_supported = true; break;
+    case SDL_GAMEPAD_CAPSENSE_RIGHT_GRIP:  g_capsense_right_grip  = ev.down; g_capsense_grip_supported = true; break;
     default: break;
     }
 }
@@ -1062,8 +1067,13 @@ bool gamepad_is_touchpad_touched()
     bool cam_stick_capsense = g_alpine_game_config.gamepad_swap_sticks
         ? g_capsense_left_stick
         : g_capsense_right_stick;
-    bool grip_capsense = g_alpine_game_config.gamepad_gyro_gripsense
-        && (g_capsense_left_grip || g_capsense_right_grip);
+    bool grip_capsense = false;
+    switch (g_alpine_game_config.gamepad_gyro_gripsense) {
+    case 1: grip_capsense = g_capsense_left_grip || g_capsense_right_grip; break; // Any
+    case 2: grip_capsense = g_capsense_left_grip && g_capsense_right_grip; break; // Both
+    case 3: grip_capsense = g_capsense_left_grip;                          break; // Left
+    case 4: grip_capsense = g_capsense_right_grip;                         break; // Right
+    }
     return g_touchpad.active || cam_stick_capsense || grip_capsense;
 }
 
@@ -1999,11 +2009,13 @@ ConsoleCommand2 gyro_menu_cursor_sens_cmd{
 ConsoleCommand2 gyro_gripsense{
     "gyro_gripsense",
     [](std::optional<int> val) {
-        if (val) g_alpine_game_config.gamepad_gyro_gripsense = *val != 0;
-        rf::console::print("Gripsense: {}", g_alpine_game_config.gamepad_gyro_gripsense ? "enabled" : "disabled");
+        if (val) g_alpine_game_config.gamepad_gyro_gripsense = std::clamp(*val, 0, 4);
+        static const char* names[] = {"Off", "Any", "Both", "Left", "Right"};
+        rf::console::print("Gripsense: {} ({})", g_alpine_game_config.gamepad_gyro_gripsense,
+            names[g_alpine_game_config.gamepad_gyro_gripsense]);
     },
-    "Enable Gripsense as a gyro touch activator (default 0)",
-    "gyro_gripsense [0|1]",
+    "Set Gripsense mode: 0=Off, 1=Any, 2=Both, 3=Left, 4=Right (default 0)",
+    "gyro_gripsense [0-4]",
 };
 
 ConsoleCommand2 input_prompts_cmd{
@@ -2104,6 +2116,11 @@ bool gamepad_is_motionsensors_supported()
 bool gamepad_has_dual_trackpads()
 {
     return g_has_dual_trackpads;
+}
+
+bool gamepad_has_capsense_grip()
+{
+    return g_capsense_grip_supported;
 }
 
 bool gamepad_is_trigger_rumble_supported()
