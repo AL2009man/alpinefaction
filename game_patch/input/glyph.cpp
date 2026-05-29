@@ -131,8 +131,8 @@ static const ButtonOverride steam_overrides[] = {
     {  5, "Steam"              },
     {  6, "Menu"               },
     { 15, "Quick Access"       },  // QAM button 
-    { 20, "Left touchpad Click"    },  // Left touchpad 
-    { 21, "Right touchpad Click"     },  // Right touchpad 
+    { 20, "Left Trackpad Click"    },  // Left touchpad 
+    { 21, "Right Trackpad Click"     },  // Right touchpad 
 };
 
 const char* gamepad_get_button_name(int button_idx)
