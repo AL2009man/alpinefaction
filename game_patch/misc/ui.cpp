@@ -336,10 +336,10 @@ static rf::ui::Checkbox ao_joy_invert_y_cbox;
 static rf::ui::Label ao_joy_invert_y_label;
 static rf::ui::Checkbox ao_swap_sticks_cbox;
 static rf::ui::Label ao_swap_sticks_label;
-static rf::ui::Checkbox ao_swap_trackpads_cbox;
-static rf::ui::Label ao_swap_trackpads_label;
-static rf::ui::Checkbox ao_trackpad_invert_y_cbox;
-static rf::ui::Label ao_trackpad_invert_y_label;
+static rf::ui::Checkbox ao_swap_touchpads_cbox;
+static rf::ui::Label ao_swap_touchpads_label;
+static rf::ui::Checkbox ao_touchpad_invert_y_cbox;
+static rf::ui::Label ao_touchpad_invert_y_label;
 static rf::ui::Checkbox ao_flickstick_sweep_cbox;
 static rf::ui::Label ao_flickstick_sweep_label;
 static rf::ui::Label ao_flickstick_sweep_butlabel;
@@ -364,22 +364,22 @@ static rf::ui::Checkbox ao_joy_scopesens_cbox;
 static rf::ui::Label ao_joy_scopesens_label;
 static rf::ui::Label ao_joy_scopesens_butlabel;
 static char ao_joy_scopesens_butlabel_text[9];
-static rf::ui::Checkbox ao_trackpad_sens_cbox;
-static rf::ui::Label ao_trackpad_sens_label;
-static rf::ui::Label ao_trackpad_sens_butlabel;
-static char ao_trackpad_sens_butlabel_text[9];
-static rf::ui::Checkbox ao_trackpad_smoothing_cbox;
-static rf::ui::Label ao_trackpad_smoothing_label;
-static rf::ui::Label ao_trackpad_smoothing_butlabel;
-static char ao_trackpad_smoothing_butlabel_text[9];
-static rf::ui::Checkbox ao_trackpad_scopesens_cbox;
-static rf::ui::Label ao_trackpad_scopesens_label;
-static rf::ui::Label ao_trackpad_scopesens_butlabel;
-static char ao_trackpad_scopesens_butlabel_text[9];
-static rf::ui::Checkbox ao_trackpad_scannersens_cbox;
-static rf::ui::Label ao_trackpad_scannersens_label;
-static rf::ui::Label ao_trackpad_scannersens_butlabel;
-static char ao_trackpad_scannersens_butlabel_text[9];
+static rf::ui::Checkbox ao_touchpad_sens_cbox;
+static rf::ui::Label ao_touchpad_sens_label;
+static rf::ui::Label ao_touchpad_sens_butlabel;
+static char ao_touchpad_sens_butlabel_text[9];
+static rf::ui::Checkbox ao_touchpad_smoothing_cbox;
+static rf::ui::Label ao_touchpad_smoothing_label;
+static rf::ui::Label ao_touchpad_smoothing_butlabel;
+static char ao_touchpad_smoothing_butlabel_text[9];
+static rf::ui::Checkbox ao_touchpad_scopesens_cbox;
+static rf::ui::Label ao_touchpad_scopesens_label;
+static rf::ui::Label ao_touchpad_scopesens_butlabel;
+static char ao_touchpad_scopesens_butlabel_text[9];
+static rf::ui::Checkbox ao_touchpad_scannersens_cbox;
+static rf::ui::Label ao_touchpad_scannersens_label;
+static rf::ui::Label ao_touchpad_scannersens_butlabel;
+static char ao_touchpad_scannersens_butlabel_text[9];
 
 // levelsounds audio options slider
 std::vector<rf::ui::Gadget*> alpine_audio_panel_settings;
@@ -877,64 +877,64 @@ void ao_joy_scopesens_cbox_on_click(int x, int y) {
     rf::ui::popup_message("Enter new joy scope sensitivity modifier value:", "", ao_joy_scopesens_cbox_on_click_callback, 1);
 }
 
-// trackpad sensitivity
-void ao_trackpad_sens_cbox_on_click_callback() {
+// touchpad sensitivity
+void ao_touchpad_sens_cbox_on_click_callback() {
     char str_buffer[9] = "";
     rf::ui::popup_get_input(str_buffer, sizeof(str_buffer));
     try {
-        g_alpine_game_config.gamepad_trackpad_sensitivity = std::max(0.0f, std::stof(str_buffer));
+        g_alpine_game_config.gamepad_touchpad_sensitivity = std::max(0.0f, std::stof(str_buffer));
     }
     catch (const std::exception& e) {
-        xlog::info("Invalid trackpad sensitivity input: '{}', reason: {}", str_buffer, e.what());
+        xlog::info("Invalid touchpad sensitivity input: '{}', reason: {}", str_buffer, e.what());
     }
 }
-void ao_trackpad_sens_cbox_on_click(int x, int y) {
-    rf::ui::popup_message("Enter trackpad camera sensitivity (degrees per full swipe):", "", ao_trackpad_sens_cbox_on_click_callback, 1);
+void ao_touchpad_sens_cbox_on_click(int x, int y) {
+    rf::ui::popup_message("Enter touchpad camera sensitivity (degrees per full swipe):", "", ao_touchpad_sens_cbox_on_click_callback, 1);
 }
 
-// trackpad smoothing
-void ao_trackpad_smoothing_cbox_on_click_callback() {
+// touchpad smoothing
+void ao_touchpad_smoothing_cbox_on_click_callback() {
     char str_buffer[7] = "";
     rf::ui::popup_get_input(str_buffer, sizeof(str_buffer));
     try {
-        g_alpine_game_config.gamepad_trackpad_smoothing = std::clamp(std::stof(str_buffer), 0.0f, 100.0f);
+        g_alpine_game_config.gamepad_touchpad_smoothing = std::clamp(std::stof(str_buffer), 0.0f, 100.0f);
     }
     catch (const std::exception& e) {
-        xlog::info("Invalid trackpad smoothing input: '{}', reason: {}", str_buffer, e.what());
+        xlog::info("Invalid touchpad smoothing input: '{}', reason: {}", str_buffer, e.what());
     }
 }
-void ao_trackpad_smoothing_cbox_on_click(int x, int y) {
-    rf::ui::popup_message("Enter trackpad smoothing value (0.0-100.0):", "", ao_trackpad_smoothing_cbox_on_click_callback, 1);
+void ao_touchpad_smoothing_cbox_on_click(int x, int y) {
+    rf::ui::popup_message("Enter touchpad smoothing value (0.0-100.0):", "", ao_touchpad_smoothing_cbox_on_click_callback, 1);
 }
 
-// trackpad scope sensitivity modifier
-void ao_trackpad_scopesens_cbox_on_click_callback() {
+// touchpad scope sensitivity modifier
+void ao_touchpad_scopesens_cbox_on_click_callback() {
     char str_buffer[7] = "";
     rf::ui::popup_get_input(str_buffer, sizeof(str_buffer));
     try {
-        g_alpine_game_config.set_gamepad_scope_trackpad_sens_mod(std::stof(str_buffer));
+        g_alpine_game_config.set_gamepad_scope_touchpad_sens_mod(std::stof(str_buffer));
     }
     catch (const std::exception& e) {
-        xlog::info("Invalid trackpad scope sens input: '{}', reason: {}", str_buffer, e.what());
+        xlog::info("Invalid touchpad scope sens input: '{}', reason: {}", str_buffer, e.what());
     }
 }
-void ao_trackpad_scopesens_cbox_on_click(int x, int y) {
-    rf::ui::popup_message("Enter trackpad scope sensitivity modifier:", "", ao_trackpad_scopesens_cbox_on_click_callback, 1);
+void ao_touchpad_scopesens_cbox_on_click(int x, int y) {
+    rf::ui::popup_message("Enter touchpad scope sensitivity modifier:", "", ao_touchpad_scopesens_cbox_on_click_callback, 1);
 }
 
-// trackpad scanner sensitivity modifier
-void ao_trackpad_scannersens_cbox_on_click_callback() {
+// touchpad scanner sensitivity modifier
+void ao_touchpad_scannersens_cbox_on_click_callback() {
     char str_buffer[7] = "";
     rf::ui::popup_get_input(str_buffer, sizeof(str_buffer));
     try {
-        g_alpine_game_config.set_gamepad_scanner_trackpad_sens_mod(std::stof(str_buffer));
+        g_alpine_game_config.set_gamepad_scanner_touchpad_sens_mod(std::stof(str_buffer));
     }
     catch (const std::exception& e) {
-        xlog::info("Invalid trackpad scanner sens input: '{}', reason: {}", str_buffer, e.what());
+        xlog::info("Invalid touchpad scanner sens input: '{}', reason: {}", str_buffer, e.what());
     }
 }
-void ao_trackpad_scannersens_cbox_on_click(int x, int y) {
-    rf::ui::popup_message("Enter trackpad scanner sensitivity modifier:", "", ao_trackpad_scannersens_cbox_on_click_callback, 1);
+void ao_touchpad_scannersens_cbox_on_click(int x, int y) {
+    rf::ui::popup_message("Enter touchpad scanner sensitivity modifier:", "", ao_touchpad_scannersens_cbox_on_click_callback, 1);
 }
 
 // gyro scanner modifier
@@ -1406,16 +1406,16 @@ void ao_swap_sticks_cbox_on_click(int x, int y) {
     ao_play_button_snd(g_alpine_game_config.gamepad_swap_sticks);
 }
 
-void ao_swap_trackpads_cbox_on_click(int x, int y) {
-    g_alpine_game_config.gamepad_swap_trackpads = !g_alpine_game_config.gamepad_swap_trackpads;
-    ao_swap_trackpads_cbox.checked = g_alpine_game_config.gamepad_swap_trackpads;
-    ao_play_button_snd(g_alpine_game_config.gamepad_swap_trackpads);
+void ao_swap_touchpads_cbox_on_click(int x, int y) {
+    g_alpine_game_config.gamepad_swap_touchpads = !g_alpine_game_config.gamepad_swap_touchpads;
+    ao_swap_touchpads_cbox.checked = g_alpine_game_config.gamepad_swap_touchpads;
+    ao_play_button_snd(g_alpine_game_config.gamepad_swap_touchpads);
 }
 
-void ao_trackpad_invert_y_cbox_on_click(int x, int y) {
-    g_alpine_game_config.gamepad_trackpad_invert_y = !g_alpine_game_config.gamepad_trackpad_invert_y;
-    ao_trackpad_invert_y_cbox.checked = g_alpine_game_config.gamepad_trackpad_invert_y;
-    ao_play_button_snd(g_alpine_game_config.gamepad_trackpad_invert_y);
+void ao_touchpad_invert_y_cbox_on_click(int x, int y) {
+    g_alpine_game_config.gamepad_touchpad_invert_y = !g_alpine_game_config.gamepad_touchpad_invert_y;
+    ao_touchpad_invert_y_cbox.checked = g_alpine_game_config.gamepad_touchpad_invert_y;
+    ao_play_button_snd(g_alpine_game_config.gamepad_touchpad_invert_y);
 }
 
 void ao_joinbeep_cbox_on_click(int x, int y) {
@@ -1964,17 +1964,17 @@ void alpine_options_panel_init() {
     alpine_options_panel_checkbox_init(
         &ao_swap_sticks_cbox, &ao_swap_sticks_label, &alpine_options_panel2, ao_swap_sticks_cbox_on_click, g_alpine_game_config.gamepad_swap_sticks, 112, 414, "Swap joysticks");
     alpine_options_panel_checkbox_init(
-        &ao_swap_trackpads_cbox, &ao_swap_trackpads_label, &alpine_options_panel2, ao_swap_trackpads_cbox_on_click, g_alpine_game_config.gamepad_swap_trackpads, 112, 444, "Swap trackpads");
+        &ao_swap_touchpads_cbox, &ao_swap_touchpads_label, &alpine_options_panel2, ao_swap_touchpads_cbox_on_click, g_alpine_game_config.gamepad_swap_touchpads, 112, 444, "Swap touchpads");
     alpine_options_panel_checkbox_init(
-        &ao_trackpad_invert_y_cbox, &ao_trackpad_invert_y_label, &alpine_options_panel2, ao_trackpad_invert_y_cbox_on_click, g_alpine_game_config.gamepad_trackpad_invert_y, 112, 474, "Trackpad cam Y-Invert");
+        &ao_touchpad_invert_y_cbox, &ao_touchpad_invert_y_label, &alpine_options_panel2, ao_touchpad_invert_y_cbox_on_click, g_alpine_game_config.gamepad_touchpad_invert_y, 112, 474, "touchpad cam Y-Invert");
     alpine_options_panel_inputbox_init(
-        &ao_trackpad_sens_cbox, &ao_trackpad_sens_label, &ao_trackpad_sens_butlabel, &alpine_options_panel2, ao_trackpad_sens_cbox_on_click, 112, 444, "Trackpad sens");
+        &ao_touchpad_sens_cbox, &ao_touchpad_sens_label, &ao_touchpad_sens_butlabel, &alpine_options_panel2, ao_touchpad_sens_cbox_on_click, 112, 444, "touchpad sens");
     alpine_options_panel_inputbox_init(
-        &ao_trackpad_smoothing_cbox, &ao_trackpad_smoothing_label, &ao_trackpad_smoothing_butlabel, &alpine_options_panel2, ao_trackpad_smoothing_cbox_on_click, 112, 474, "Trackpad smoothing");
+        &ao_touchpad_smoothing_cbox, &ao_touchpad_smoothing_label, &ao_touchpad_smoothing_butlabel, &alpine_options_panel2, ao_touchpad_smoothing_cbox_on_click, 112, 474, "touchpad smoothing");
     alpine_options_panel_inputbox_init(
-        &ao_trackpad_scopesens_cbox, &ao_trackpad_scopesens_label, &ao_trackpad_scopesens_butlabel, &alpine_options_panel2, ao_trackpad_scopesens_cbox_on_click, 112, 504, "Trackpad scope mod");
+        &ao_touchpad_scopesens_cbox, &ao_touchpad_scopesens_label, &ao_touchpad_scopesens_butlabel, &alpine_options_panel2, ao_touchpad_scopesens_cbox_on_click, 112, 504, "touchpad scope mod");
     alpine_options_panel_inputbox_init(
-        &ao_trackpad_scannersens_cbox, &ao_trackpad_scannersens_label, &ao_trackpad_scannersens_butlabel, &alpine_options_panel2, ao_trackpad_scannersens_cbox_on_click, 112, 534, "Trackpad scan mod");
+        &ao_touchpad_scannersens_cbox, &ao_touchpad_scannersens_label, &ao_touchpad_scannersens_butlabel, &alpine_options_panel2, ao_touchpad_scannersens_cbox_on_click, 112, 534, "touchpad scan mod");
     alpine_options_panel_inputbox_init(
         &ao_joy_scannersens_cbox, &ao_joy_scannersens_label, &ao_joy_scannersens_butlabel, &alpine_options_panel2, ao_joy_scannersens_cbox_on_click, 112, 324, "Joy scanner mod");
     alpine_options_panel_inputbox_init(
@@ -2259,17 +2259,17 @@ void alpine_options_panel_do_frame(int x)
     snprintf(ao_joy_scopesens_butlabel_text, sizeof(ao_joy_scopesens_butlabel_text), "%6.4f", g_alpine_game_config.gamepad_scope_sensitivity_modifier);
     ao_joy_scopesens_butlabel.text = ao_joy_scopesens_butlabel_text;
 
-    snprintf(ao_trackpad_sens_butlabel_text, sizeof(ao_trackpad_sens_butlabel_text), "%6.1f", g_alpine_game_config.gamepad_trackpad_sensitivity);
-    ao_trackpad_sens_butlabel.text = ao_trackpad_sens_butlabel_text;
+    snprintf(ao_touchpad_sens_butlabel_text, sizeof(ao_touchpad_sens_butlabel_text), "%6.1f", g_alpine_game_config.gamepad_touchpad_sensitivity);
+    ao_touchpad_sens_butlabel.text = ao_touchpad_sens_butlabel_text;
 
-    snprintf(ao_trackpad_smoothing_butlabel_text, sizeof(ao_trackpad_smoothing_butlabel_text), "%6.4f", g_alpine_game_config.gamepad_trackpad_smoothing);
-    ao_trackpad_smoothing_butlabel.text = ao_trackpad_smoothing_butlabel_text;
+    snprintf(ao_touchpad_smoothing_butlabel_text, sizeof(ao_touchpad_smoothing_butlabel_text), "%6.4f", g_alpine_game_config.gamepad_touchpad_smoothing);
+    ao_touchpad_smoothing_butlabel.text = ao_touchpad_smoothing_butlabel_text;
 
-    snprintf(ao_trackpad_scopesens_butlabel_text, sizeof(ao_trackpad_scopesens_butlabel_text), "%6.4f", g_alpine_game_config.gamepad_scope_trackpad_sensitivity_modifier);
-    ao_trackpad_scopesens_butlabel.text = ao_trackpad_scopesens_butlabel_text;
+    snprintf(ao_touchpad_scopesens_butlabel_text, sizeof(ao_touchpad_scopesens_butlabel_text), "%6.4f", g_alpine_game_config.gamepad_scope_touchpad_sensitivity_modifier);
+    ao_touchpad_scopesens_butlabel.text = ao_touchpad_scopesens_butlabel_text;
 
-    snprintf(ao_trackpad_scannersens_butlabel_text, sizeof(ao_trackpad_scannersens_butlabel_text), "%6.4f", g_alpine_game_config.gamepad_scanner_trackpad_sensitivity_modifier);
-    ao_trackpad_scannersens_butlabel.text = ao_trackpad_scannersens_butlabel_text;
+    snprintf(ao_touchpad_scannersens_butlabel_text, sizeof(ao_touchpad_scannersens_butlabel_text), "%6.4f", g_alpine_game_config.gamepad_scanner_touchpad_sensitivity_modifier);
+    ao_touchpad_scannersens_butlabel.text = ao_touchpad_scannersens_butlabel_text;
 
     snprintf(ao_gyro_scannersens_butlabel_text, sizeof(ao_gyro_scannersens_butlabel_text), "%6.4f", g_alpine_game_config.gamepad_scanner_gyro_sensitivity_modifier);
     ao_gyro_scannersens_butlabel.text = ao_gyro_scannersens_butlabel_text;
@@ -2355,7 +2355,7 @@ void alpine_options_panel_do_frame(int x)
     // show/hide gyro ui if gamepad supports motion sensors and (for subcontrols) gyro aiming is enabled
     bool gyro_hw = gamepad_is_motionsensors_supported();
     bool gyro_enabled = gyro_hw && g_alpine_game_config.gamepad_gyro_enabled;
-    bool dual_trackpads = gamepad_has_dual_trackpads();
+    bool dual_touchpads = gamepad_has_dual_touchpads();
 
     ao_gyro_enabled_cbox.enabled         = gyro_hw;
     ao_gyro_enabled_label.enabled        = gyro_hw;
@@ -2427,12 +2427,12 @@ void alpine_options_panel_do_frame(int x)
     ao_joy_scopesens_cbox.enabled        = true;
     ao_joy_scopesens_label.enabled       = true;
     ao_joy_scopesens_butlabel.enabled    = true;
-    ao_trackpad_sens_cbox.enabled        = dual_trackpads;
-    ao_trackpad_sens_label.enabled       = dual_trackpads;
-    ao_trackpad_sens_butlabel.enabled    = dual_trackpads;
-    ao_trackpad_smoothing_cbox.enabled      = dual_trackpads;
-    ao_trackpad_smoothing_label.enabled     = dual_trackpads;
-    ao_trackpad_smoothing_butlabel.enabled  = dual_trackpads;
+    ao_touchpad_sens_cbox.enabled        = dual_touchpads;
+    ao_touchpad_sens_label.enabled       = dual_touchpads;
+    ao_touchpad_sens_butlabel.enabled    = dual_touchpads;
+    ao_touchpad_smoothing_cbox.enabled      = dual_touchpads;
+    ao_touchpad_smoothing_label.enabled     = dual_touchpads;
+    ao_touchpad_smoothing_butlabel.enabled  = dual_touchpads;
 
     // dynamic right-column layout: pack gyro and rumble items tightly based on what's active
     {
@@ -2490,16 +2490,16 @@ void alpine_options_panel_do_frame(int x)
     ao_joy_invert_y_label.enabled          = !flick_stick;
     ao_swap_sticks_cbox.enabled            = true;
     ao_swap_sticks_label.enabled           = true;
-    ao_swap_trackpads_cbox.enabled         = dual_trackpads;
-    ao_swap_trackpads_label.enabled        = dual_trackpads;
-    ao_trackpad_invert_y_cbox.enabled      = dual_trackpads;
-    ao_trackpad_invert_y_label.enabled     = dual_trackpads;
-    ao_trackpad_scopesens_cbox.enabled     = dual_trackpads;
-    ao_trackpad_scopesens_label.enabled    = dual_trackpads;
-    ao_trackpad_scopesens_butlabel.enabled = dual_trackpads;
-    ao_trackpad_scannersens_cbox.enabled     = dual_trackpads;
-    ao_trackpad_scannersens_label.enabled    = dual_trackpads;
-    ao_trackpad_scannersens_butlabel.enabled = dual_trackpads;
+    ao_swap_touchpads_cbox.enabled         = dual_touchpads;
+    ao_swap_touchpads_label.enabled        = dual_touchpads;
+    ao_touchpad_invert_y_cbox.enabled      = dual_touchpads;
+    ao_touchpad_invert_y_label.enabled     = dual_touchpads;
+    ao_touchpad_scopesens_cbox.enabled     = dual_touchpads;
+    ao_touchpad_scopesens_label.enabled    = dual_touchpads;
+    ao_touchpad_scopesens_butlabel.enabled = dual_touchpads;
+    ao_touchpad_scannersens_cbox.enabled     = dual_touchpads;
+    ao_touchpad_scannersens_label.enabled    = dual_touchpads;
+    ao_touchpad_scannersens_butlabel.enabled = dual_touchpads;
 
     // dynamic left-column layout: pack items tightly based on active mode
     {
@@ -2514,12 +2514,12 @@ void alpine_options_panel_do_frame(int x)
         lc.add_inputbox(ao_joy_scopesens_cbox, ao_joy_scopesens_label, ao_joy_scopesens_butlabel);
         lc.add_checkbox(ao_joy_invert_y_cbox, ao_joy_invert_y_label, !flick_stick);
         lc.add_checkbox(ao_swap_sticks_cbox, ao_swap_sticks_label);
-        lc.add_inputbox(ao_trackpad_sens_cbox, ao_trackpad_sens_label, ao_trackpad_sens_butlabel, dual_trackpads);
-        lc.add_inputbox(ao_trackpad_scannersens_cbox, ao_trackpad_scannersens_label, ao_trackpad_scannersens_butlabel, dual_trackpads);
-        lc.add_inputbox(ao_trackpad_scopesens_cbox, ao_trackpad_scopesens_label, ao_trackpad_scopesens_butlabel, dual_trackpads);
-        lc.add_inputbox(ao_trackpad_smoothing_cbox, ao_trackpad_smoothing_label, ao_trackpad_smoothing_butlabel, dual_trackpads);
-        lc.add_checkbox(ao_trackpad_invert_y_cbox, ao_trackpad_invert_y_label, dual_trackpads);
-        lc.add_checkbox(ao_swap_trackpads_cbox, ao_swap_trackpads_label, dual_trackpads);
+        lc.add_inputbox(ao_touchpad_sens_cbox, ao_touchpad_sens_label, ao_touchpad_sens_butlabel, dual_touchpads);
+        lc.add_inputbox(ao_touchpad_scannersens_cbox, ao_touchpad_scannersens_label, ao_touchpad_scannersens_butlabel, dual_touchpads);
+        lc.add_inputbox(ao_touchpad_scopesens_cbox, ao_touchpad_scopesens_label, ao_touchpad_scopesens_butlabel, dual_touchpads);
+        lc.add_inputbox(ao_touchpad_smoothing_cbox, ao_touchpad_smoothing_label, ao_touchpad_smoothing_butlabel, dual_touchpads);
+        lc.add_checkbox(ao_touchpad_invert_y_cbox, ao_touchpad_invert_y_label, dual_touchpads);
+        lc.add_checkbox(ao_swap_touchpads_cbox, ao_swap_touchpads_label, dual_touchpads);
     }
 
     ao_gamepad_icon_override_cbox.enabled      = true;

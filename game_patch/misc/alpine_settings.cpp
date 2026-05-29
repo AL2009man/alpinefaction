@@ -1179,13 +1179,13 @@ bool alpine_player_settings_load(rf::Player* player)
         g_alpine_game_config.gamepad_flickstick_release_deadzone = std::clamp(std::stof(settings["GamepadFlickstickReleaseDeadzone"]), 0.0f, 0.9f);
         processed_keys.insert("GamepadFlickstickReleaseDeadzone");
     }
-    if (settings.count("GamepadTrackpadSensitivity")) {
-        g_alpine_game_config.gamepad_trackpad_sensitivity = std::max(0.0f, std::stof(settings["GamepadTrackpadSensitivity"]));
-        processed_keys.insert("GamepadTrackpadSensitivity");
+    if (settings.count("GamepadtouchpadSensitivity")) {
+        g_alpine_game_config.gamepad_touchpad_sensitivity = std::max(0.0f, std::stof(settings["GamepadtouchpadSensitivity"]));
+        processed_keys.insert("GamepadtouchpadSensitivity");
     }
-    if (settings.count("GamepadTrackpadSmoothing")) {
-        g_alpine_game_config.gamepad_trackpad_smoothing = std::clamp(std::stof(settings["GamepadTrackpadSmoothing"]), 0.0f, 100.0f);
-        processed_keys.insert("GamepadTrackpadSmoothing");
+    if (settings.count("GamepadtouchpadSmoothing")) {
+        g_alpine_game_config.gamepad_touchpad_smoothing = std::clamp(std::stof(settings["GamepadtouchpadSmoothing"]), 0.0f, 100.0f);
+        processed_keys.insert("GamepadtouchpadSmoothing");
     }
     if (settings.count("GamepadIconOverride")) {
         g_alpine_game_config.gamepad_icon_override = std::clamp(std::stoi(settings["GamepadIconOverride"]), 0, 10);
@@ -1199,17 +1199,17 @@ bool alpine_player_settings_load(rf::Player* player)
         g_alpine_game_config.gamepad_joy_invert_y = std::stoi(settings["GamepadJoyInvertY"]) != 0;
         processed_keys.insert("GamepadJoyInvertY");
     }
-    if (settings.count("GamepadTrackpadInvertY")) {
-        g_alpine_game_config.gamepad_trackpad_invert_y = std::stoi(settings["GamepadTrackpadInvertY"]) != 0;
-        processed_keys.insert("GamepadTrackpadInvertY");
+    if (settings.count("GamepadtouchpadInvertY")) {
+        g_alpine_game_config.gamepad_touchpad_invert_y = std::stoi(settings["GamepadtouchpadInvertY"]) != 0;
+        processed_keys.insert("GamepadtouchpadInvertY");
     }
     if (settings.count("GamepadSwapSticks")) {
         g_alpine_game_config.gamepad_swap_sticks = std::stoi(settings["GamepadSwapSticks"]) != 0;
         processed_keys.insert("GamepadSwapSticks");
     }
-    if (settings.count("GamepadSwapTrackpads")) {
-        g_alpine_game_config.gamepad_swap_trackpads = std::stoi(settings["GamepadSwapTrackpads"]) != 0;
-        processed_keys.insert("GamepadSwapTrackpads");
+    if (settings.count("GamepadSwaptouchpads")) {
+        g_alpine_game_config.gamepad_swap_touchpads = std::stoi(settings["GamepadSwaptouchpads"]) != 0;
+        processed_keys.insert("GamepadSwaptouchpads");
     }
     if (settings.count("GamepadRumble")) {
         g_alpine_game_config.gamepad_rumble_intensity = std::clamp(std::stof(settings["GamepadRumble"]), 0.0f, 1.0f);
@@ -1293,13 +1293,13 @@ bool alpine_player_settings_load(rf::Player* player)
         g_alpine_game_config.set_gamepad_scanner_gyro_sens_mod(std::stof(settings["GamepadGyroScannerSensitivityModifier"]));
         processed_keys.insert("GamepadGyroScannerSensitivityModifier");
     }
-    if (settings.count("GamepadTrackpadScopeSensitivityModifier")) {
-        g_alpine_game_config.set_gamepad_scope_trackpad_sens_mod(std::stof(settings["GamepadTrackpadScopeSensitivityModifier"]));
-        processed_keys.insert("GamepadTrackpadScopeSensitivityModifier");
+    if (settings.count("GamepadtouchpadScopeSensitivityModifier")) {
+        g_alpine_game_config.set_gamepad_scope_touchpad_sens_mod(std::stof(settings["GamepadtouchpadScopeSensitivityModifier"]));
+        processed_keys.insert("GamepadtouchpadScopeSensitivityModifier");
     }
-    if (settings.count("GamepadTrackpadScannerSensitivityModifier")) {
-        g_alpine_game_config.set_gamepad_scanner_trackpad_sens_mod(std::stof(settings["GamepadTrackpadScannerSensitivityModifier"]));
-        processed_keys.insert("GamepadTrackpadScannerSensitivityModifier");
+    if (settings.count("GamepadtouchpadScannerSensitivityModifier")) {
+        g_alpine_game_config.set_gamepad_scanner_touchpad_sens_mod(std::stof(settings["GamepadtouchpadScannerSensitivityModifier"]));
+        processed_keys.insert("GamepadtouchpadScannerSensitivityModifier");
     }
 
     // Load binds
@@ -1415,8 +1415,8 @@ void alpine_control_config_serialize(std::ofstream& file, const rf::ControlConfi
     file << "GamepadGyroCameraSensitivity=" << g_alpine_game_config.gamepad_gyro_sensitivity << "\n";
     file << "GamepadGyroScopeSensitivityModifier=" << g_alpine_game_config.gamepad_scope_gyro_sensitivity_modifier << "\n";
     file << "GamepadGyroScannerSensitivityModifier=" << g_alpine_game_config.gamepad_scanner_gyro_sensitivity_modifier << "\n";
-    file << "GamepadTrackpadScopeSensitivityModifier=" << g_alpine_game_config.gamepad_scope_trackpad_sensitivity_modifier << "\n";
-    file << "GamepadTrackpadScannerSensitivityModifier=" << g_alpine_game_config.gamepad_scanner_trackpad_sensitivity_modifier << "\n";
+    file << "GamepadtouchpadScopeSensitivityModifier=" << g_alpine_game_config.gamepad_scope_touchpad_sensitivity_modifier << "\n";
+    file << "GamepadtouchpadScannerSensitivityModifier=" << g_alpine_game_config.gamepad_scanner_touchpad_sensitivity_modifier << "\n";
     file << "GamepadGyroAutocalibrationMode=" << g_alpine_game_config.gamepad_gyro_autocalibration_mode << "\n";
     file << "GamepadGyroSpace=" << g_alpine_game_config.gamepad_gyro_space << "\n";
     file << "GamepadGyroModifierMode=" << g_alpine_game_config.gamepad_gyro_modifier_mode << "\n";
@@ -1427,11 +1427,11 @@ void alpine_control_config_serialize(std::ofstream& file, const rf::ControlConfi
     file << "GamepadIconOverride=" << g_alpine_game_config.gamepad_icon_override << "\n";
     file << "InputPromptMode=" << g_alpine_game_config.input_prompt_override << "\n";
     file << "GamepadJoyInvertY=" << g_alpine_game_config.gamepad_joy_invert_y << "\n";
-    file << "GamepadTrackpadInvertY=" << g_alpine_game_config.gamepad_trackpad_invert_y << "\n";
-    file << "GamepadTrackpadSensitivity=" << g_alpine_game_config.gamepad_trackpad_sensitivity << "\n";
-    file << "GamepadTrackpadSmoothing=" << g_alpine_game_config.gamepad_trackpad_smoothing << "\n";
+    file << "GamepadtouchpadInvertY=" << g_alpine_game_config.gamepad_touchpad_invert_y << "\n";
+    file << "GamepadtouchpadSensitivity=" << g_alpine_game_config.gamepad_touchpad_sensitivity << "\n";
+    file << "GamepadtouchpadSmoothing=" << g_alpine_game_config.gamepad_touchpad_smoothing << "\n";
     file << "GamepadSwapSticks=" << g_alpine_game_config.gamepad_swap_sticks << "\n";
-    file << "GamepadSwapTrackpads=" << g_alpine_game_config.gamepad_swap_trackpads << "\n";
+    file << "GamepadSwaptouchpads=" << g_alpine_game_config.gamepad_swap_touchpads << "\n";
     file << "GamepadGyroGripsense=" << g_alpine_game_config.gamepad_gyro_gripsense << "\n";
     file << "GamepadRumble=" << g_alpine_game_config.gamepad_rumble_intensity << "\n";
     file << "GamepadWeaponRumble=" << g_alpine_game_config.gamepad_weapon_rumble_enabled << "\n";
