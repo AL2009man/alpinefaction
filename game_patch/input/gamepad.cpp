@@ -185,7 +185,8 @@ static bool g_capsense_left_stick  = false;
 static bool g_capsense_right_stick = false;
 static bool g_capsense_left_grip   = false;
 static bool g_capsense_right_grip  = false;
-static bool g_capsense_grip_supported = false; // true once any grip capsense event is received
+static bool g_capsense_grip_supported  = false; // true once any grip capsense event is received
+static bool g_capsense_stick_supported = false; // true if any connected controller has stick capsense
 
 static float g_move_lx = 0.0f, g_move_ly = 0.0f;
 static float g_move_mag = 0.0f;
@@ -502,11 +503,14 @@ static void try_open_gamepad(SDL_JoystickID id)
     if (!g_trigger_rumble_supported) try_enable_gamepad_trigger_rumble(gp);
     try_enable_gamepad_sensors(gp);
     int num_touchpads = SDL_GetNumGamepadTouchpads(gp);
-    g_has_dual_touchpads = num_touchpads >= 2;
+    g_has_dual_touchpads |= (num_touchpads >= 2);
     xlog::info("Gamepad touchpad count: {}", num_touchpads);
-    g_capsense_grip_supported = SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_LEFT_GRIP)
-                             || SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_RIGHT_GRIP);
+    g_capsense_grip_supported  |= SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_LEFT_GRIP)
+                               || SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_RIGHT_GRIP);
+    g_capsense_stick_supported |= SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_LEFT_STICK)
+                               || SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_RIGHT_STICK);
     xlog::info("Gamepad capsense grip supported: {}", g_capsense_grip_supported);
+    xlog::info("Gamepad capsense stick supported: {}", g_capsense_stick_supported);
 }
 
 static void inject_action_key(int action, bool down)
@@ -903,6 +907,7 @@ static void disconnect_all_gamepads()
     g_trigger_rumble_supported = false;
     g_has_dual_touchpads       = false;
     g_capsense_grip_supported  = false;
+    g_capsense_stick_supported = false;
     release_all_gamepad_inputs();
 }
 
@@ -926,15 +931,27 @@ static void handle_gamepad_removed(const SDL_GamepadDeviceEvent& ev)
         g_motion_sensors_supported = false;
         g_rumble_supported         = false;
         g_trigger_rumble_supported = false;
+        g_has_dual_touchpads       = false;
+        g_capsense_grip_supported  = false;
+        g_capsense_stick_supported = false;
         return;
     }
 
-    // Clear sensor flag if no remaining controller has sensors enabled
-    bool any_sensor = false;
-    for (auto* gp : g_gamepads)
-        if (gp && SDL_GamepadSensorEnabled(gp, SDL_SENSOR_GYRO)) { any_sensor = true; break; }
-    if (!any_sensor)
-        g_motion_sensors_supported = false;
+    // Rescan remaining controllers for feature flags
+    bool any_sensor = false, any_dual_touchpad = false, any_capsense = false, any_capsense_stick = false;
+    for (auto* gp : g_gamepads) {
+        if (!gp) continue;
+        if (SDL_GamepadSensorEnabled(gp, SDL_SENSOR_GYRO))                          any_sensor = true;
+        if (SDL_GetNumGamepadTouchpads(gp) >= 2)                                    any_dual_touchpad = true;
+        if (SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_LEFT_GRIP)
+         || SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_RIGHT_GRIP))            any_capsense = true;
+        if (SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_LEFT_STICK)
+         || SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_RIGHT_STICK))           any_capsense_stick = true;
+    }
+    if (!any_sensor)         g_motion_sensors_supported = false;
+    if (!any_dual_touchpad)  g_has_dual_touchpads       = false;
+    if (!any_capsense)       g_capsense_grip_supported  = false;
+    if (!any_capsense_stick) g_capsense_stick_supported = false;
     xlog::info("Remaining gamepad: '{}'", SDL_GetGamepadName(gamepad_get_primary()));
 }
 
@@ -1145,10 +1162,10 @@ static void handle_gamepad_touchpad_up(const SDL_GamepadTouchpadEvent& ev)
 
 static void handle_gamepad_capsense(const SDL_GamepadCapSenseEvent& ev)
 {
-    if (!is_gamepad_input_active() || SDL_GetGamepadID(g_gamepad) != ev.which) return;
+    if (!is_gamepad_input_active() || !is_open_gamepad_id(ev.which)) return;
     switch (static_cast<SDL_GamepadCapSenseType>(ev.capsense)) {
-    case SDL_GAMEPAD_CAPSENSE_LEFT_STICK:  g_capsense_left_stick  = ev.down; break;
-    case SDL_GAMEPAD_CAPSENSE_RIGHT_STICK: g_capsense_right_stick = ev.down; break;
+    case SDL_GAMEPAD_CAPSENSE_LEFT_STICK:  g_capsense_left_stick  = ev.down; g_capsense_stick_supported = true; break;
+    case SDL_GAMEPAD_CAPSENSE_RIGHT_STICK: g_capsense_right_stick = ev.down; g_capsense_stick_supported = true; break;
     case SDL_GAMEPAD_CAPSENSE_LEFT_GRIP:   g_capsense_left_grip   = ev.down; g_capsense_grip_supported = true; break;
     case SDL_GAMEPAD_CAPSENSE_RIGHT_GRIP:  g_capsense_right_grip  = ev.down; g_capsense_grip_supported = true; break;
     default: break;
