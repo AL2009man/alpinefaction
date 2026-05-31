@@ -4,7 +4,7 @@
 #include "rumble.h"
 
 // Maximum number of simultaneously connected gamepads.
-// Note: if planning to add Local multiplayer support, please upgrade both gyro and rumble functionality 
+// Note: if planning to add Local multiplayer support, please upgrade the rest of the gamepad input functionality 
 // to be per-gamepad instead of global, then increase the max gamepad to 4...or higher? (wink wink)
 inline constexpr int k_max_gamepads = 2;
 SDL_Gamepad* gamepad_get_slot(int idx);      // direct slot access by index
