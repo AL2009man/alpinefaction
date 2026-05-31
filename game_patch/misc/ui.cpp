@@ -1966,15 +1966,15 @@ void alpine_options_panel_init() {
     alpine_options_panel_checkbox_init(
         &ao_swap_touchpads_cbox, &ao_swap_touchpads_label, &alpine_options_panel2, ao_swap_touchpads_cbox_on_click, g_alpine_game_config.gamepad_swap_touchpads, 112, 444, "Swap touchpads");
     alpine_options_panel_checkbox_init(
-        &ao_touchpad_invert_y_cbox, &ao_touchpad_invert_y_label, &alpine_options_panel2, ao_touchpad_invert_y_cbox_on_click, g_alpine_game_config.gamepad_touchpad_invert_y, 112, 474, "touchpad cam Y-Invert");
+        &ao_touchpad_invert_y_cbox, &ao_touchpad_invert_y_label, &alpine_options_panel2, ao_touchpad_invert_y_cbox_on_click, g_alpine_game_config.gamepad_touchpad_invert_y, 112, 474, "Touchpad cam Y-Invert");
     alpine_options_panel_inputbox_init(
-        &ao_touchpad_sens_cbox, &ao_touchpad_sens_label, &ao_touchpad_sens_butlabel, &alpine_options_panel2, ao_touchpad_sens_cbox_on_click, 112, 444, "touchpad sens");
+        &ao_touchpad_sens_cbox, &ao_touchpad_sens_label, &ao_touchpad_sens_butlabel, &alpine_options_panel2, ao_touchpad_sens_cbox_on_click, 112, 444, "Touchpad sens");
     alpine_options_panel_inputbox_init(
-        &ao_touchpad_smoothing_cbox, &ao_touchpad_smoothing_label, &ao_touchpad_smoothing_butlabel, &alpine_options_panel2, ao_touchpad_smoothing_cbox_on_click, 112, 474, "touchpad smoothing");
+        &ao_touchpad_smoothing_cbox, &ao_touchpad_smoothing_label, &ao_touchpad_smoothing_butlabel, &alpine_options_panel2, ao_touchpad_smoothing_cbox_on_click, 112, 474, "Touchpad smoothing");
     alpine_options_panel_inputbox_init(
-        &ao_touchpad_scopesens_cbox, &ao_touchpad_scopesens_label, &ao_touchpad_scopesens_butlabel, &alpine_options_panel2, ao_touchpad_scopesens_cbox_on_click, 112, 504, "touchpad scope mod");
+        &ao_touchpad_scopesens_cbox, &ao_touchpad_scopesens_label, &ao_touchpad_scopesens_butlabel, &alpine_options_panel2, ao_touchpad_scopesens_cbox_on_click, 112, 504, "Touchpad scope mod");
     alpine_options_panel_inputbox_init(
-        &ao_touchpad_scannersens_cbox, &ao_touchpad_scannersens_label, &ao_touchpad_scannersens_butlabel, &alpine_options_panel2, ao_touchpad_scannersens_cbox_on_click, 112, 534, "touchpad scan mod");
+        &ao_touchpad_scannersens_cbox, &ao_touchpad_scannersens_label, &ao_touchpad_scannersens_butlabel, &alpine_options_panel2, ao_touchpad_scannersens_cbox_on_click, 112, 534, "Touchpad scan mod");
     alpine_options_panel_inputbox_init(
         &ao_joy_scannersens_cbox, &ao_joy_scannersens_label, &ao_joy_scannersens_butlabel, &alpine_options_panel2, ao_joy_scannersens_cbox_on_click, 112, 324, "Joy scanner mod");
     alpine_options_panel_inputbox_init(
