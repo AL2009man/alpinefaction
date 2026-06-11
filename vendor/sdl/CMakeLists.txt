@@ -6,7 +6,7 @@ include(FetchContent)
 FetchContent_Declare(
     SDL3
     GIT_REPOSITORY "https://github.com/libsdl-org/SDL.git"
-    GIT_TAG        "a7ecd5f7771d46e1747473fe0252a035fbd54d24"
+    GIT_TAG        "72771ac0b41812065acda4b5c782000293d77ef5"
 )
 
 set(SDL_STATIC ON  CACHE BOOL "" FORCE)
@@ -15,13 +15,14 @@ set(SDL_TEST   OFF CACHE BOOL "" FORCE)
 set(SDL_PRESEED                  OFF CACHE BOOL     "" FORCE)
 
 # Disable all subsystems except those required for gamepad/joystick input
-set(SDL_AUDIO   OFF CACHE BOOL "" FORCE)
-set(SDL_VIDEO   OFF CACHE BOOL "" FORCE)
-set(SDL_GPU     OFF CACHE BOOL "" FORCE)
-set(SDL_RENDER  OFF CACHE BOOL "" FORCE)
-set(SDL_CAMERA  OFF CACHE BOOL "" FORCE)
-set(SDL_POWER   OFF CACHE BOOL "" FORCE)
-set(SDL_DIALOG  OFF CACHE BOOL "" FORCE)
-set(SDL_TRAY    OFF CACHE BOOL "" FORCE)
+set(SDL_AUDIO        OFF CACHE BOOL "" FORCE)
+set(SDL_VIDEO        OFF CACHE BOOL "" FORCE)
+set(SDL_GPU          OFF CACHE BOOL "" FORCE)
+set(SDL_RENDER       OFF CACHE BOOL "" FORCE)
+set(SDL_CAMERA       OFF CACHE BOOL "" FORCE)
+set(SDL_POWER        OFF CACHE BOOL "" FORCE)
+set(SDL_DIALOG       OFF CACHE BOOL "" FORCE)
+set(SDL_TRAY         OFF CACHE BOOL "" FORCE)
+set(SDL_NOTIFICATION OFF CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(SDL3)
