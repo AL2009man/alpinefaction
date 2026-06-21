@@ -6,7 +6,7 @@ include(FetchContent)
 FetchContent_Declare(
     SDL3
     GIT_REPOSITORY "https://github.com/libsdl-org/SDL.git"
-    GIT_TAG        "72771ac0b41812065acda4b5c782000293d77ef5"
+    GIT_TAG        "49879ba0d6997709765caa53d9029b2c3551f1eb"
 )
 
 set(SDL_STATIC ON  CACHE BOOL "" FORCE)
