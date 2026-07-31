@@ -2703,6 +2703,7 @@ void gamepad_stop_rumble()
 void gamepad_sdl_init()
 {
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_GAMEINPUT, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS3, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS3_SIXAXIS_DRIVER, "1");
     if (g_alpine_system_config.gamepad_rawinput_enabled) {
