@@ -1201,6 +1201,19 @@ bool multi_spectate_execute_action(rf::ControlConfigAction action, bool was_pres
         return false;
     }
 
+    if (action == get_af_control(rf::AlpineControlConfigAction::AF_ACTION_SPECTATE_ORBIT)) {
+        if (!g_spectate_mode_enabled || g_spectate_view_mode != SpectateViewMode::third_person
+            || rf::console::console_is_visible() || rf::multi_chat_is_say_visible()
+            || vote_panel_is_gameplay_overlay_active()) {
+            return false;
+        }
+        if (was_pressed) {
+            g_spectate_third_person_orbit = !g_spectate_third_person_orbit;
+            spectate_apply_player_view_mode();
+        }
+        return true;
+    }
+
     const bool primary = (action == rf::CC_ACTION_PRIMARY_ATTACK || action == rf::CC_ACTION_SLIDE_RIGHT);
     const bool secondary = (action == rf::CC_ACTION_SECONDARY_ATTACK || action == rf::CC_ACTION_SLIDE_LEFT);
     if (!primary && !secondary) {
@@ -1673,16 +1686,6 @@ void multi_spectate_process_bind_input()
     }
     if (!bindable) {
         g_spectate_bind_dialog_open = false;
-    }
-
-    // Middle mouse toggles third-person orbit (attached third person only). mouse_was_button_pressed
-    // is a pure read (the engine refreshes the per-frame button snapshot itself), so this is one
-    // toggle per physical click.
-    const bool mmb_pressed = rf::mouse_was_button_pressed(2) > 0;
-    if (mmb_pressed && !typing && g_spectate_mode_enabled
-        && g_spectate_view_mode == SpectateViewMode::third_person) {
-        g_spectate_third_person_orbit = !g_spectate_third_person_orbit;
-        spectate_apply_player_view_mode();
     }
 
     // Delete removes the current player-dropped static camera (static mode only). It can flip
@@ -2535,6 +2538,9 @@ void multi_spectate_render() {
             std::string spec_menu_text = get_action_bind_name(
                 get_af_control(rf::AlpineControlConfigAction::AF_ACTION_SPECTATE_MENU)
             );
+            std::string orbit_text = get_action_bind_name(
+                get_af_control(rf::AlpineControlConfigAction::AF_ACTION_SPECTATE_ORBIT)
+            );
             std::string next_player_text =
                 get_action_bind_name(rf::ControlConfigAction::CC_ACTION_PRIMARY_ATTACK);
 
@@ -2545,7 +2551,7 @@ void multi_spectate_render() {
             hints[nh++] = {change_text.c_str(), "First / Third Person View"};
             hints[nh++] = {next_player_text.c_str(), "Next / Previous Player"};
             if (g_spectate_view_mode == SpectateViewMode::third_person)
-                hints[nh++] = {"MOUSE 3", "Toggle Camera Orbit"};
+                hints[nh++] = {orbit_text.c_str(), "Toggle Camera Orbit"};
             hints[nh++] = {"NUM 0-9", "Jump to Player"};
             hints[nh++] = {"NUM ENTER", "Player Quick-Binds"};
             hints[nh++] = {spec_menu_text.c_str(), "Open Spectate Options Menu"};

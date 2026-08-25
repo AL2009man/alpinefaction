@@ -286,6 +286,8 @@ CodeInjection control_config_init_patch{
                                        rf::AlpineControlConfigAction::AF_ACTION_SPECTATE_TOGGLE);
         alpine_control_config_add_item(ccp, "Change Spectate View", false, rf::KEY_SEMICOL, -1, -1,
                                        rf::AlpineControlConfigAction::AF_ACTION_SPECTATE_CHANGE_VIEW);
+        alpine_control_config_add_item(ccp, "Toggle Camera Orbit", false, -1, -1, 2, // Mouse 3
+                                       rf::AlpineControlConfigAction::AF_ACTION_SPECTATE_ORBIT);
         alpine_control_config_add_item(ccp, "Spray", 0, rf::KEY_Z, -1, -1,
                                        rf::AlpineControlConfigAction::AF_ACTION_SPRAY);
         alpine_control_config_add_item(ccp, "Call Vote Menu", false, rf::KEY_F4, -1, -1,
