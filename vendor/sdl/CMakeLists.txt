@@ -6,7 +6,7 @@ include(FetchContent)
 FetchContent_Declare(
     SDL3
     GIT_REPOSITORY "https://github.com/libsdl-org/SDL.git"
-    GIT_TAG        "38aace93598bcd2ae12eec4d277790425cf08ade"
+    GIT_TAG        "33b4a9d915947d2482366622fc4f97c944254775"
 )
 
 set(SDL_STATIC ON  CACHE BOOL "" FORCE)
@@ -24,5 +24,6 @@ set(SDL_POWER        OFF CACHE BOOL "" FORCE)
 set(SDL_DIALOG       OFF CACHE BOOL "" FORCE)
 set(SDL_TRAY         OFF CACHE BOOL "" FORCE)
 set(SDL_NOTIFICATION OFF CACHE BOOL "" FORCE)
+set(SDL_HAPTIC OFF CACHE BOOL "" FORCE) # surprisingly enough, it's not needed for gamepads!
 
 FetchContent_MakeAvailable(SDL3)
