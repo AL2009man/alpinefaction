@@ -90,6 +90,21 @@ static int16_t bind_field_from_ini(const std::string& text, bool allow_inherit, 
     return static_cast<int16_t>(value);
 }
 
+// Controller input field of a Bind line. An absent field in a context line says nothing, so it
+// inherits; '~' does too. Anything that is not a controller code is treated as unbound.
+static int16_t pad_field_from_ini(const std::string& text, bool allow_inherit)
+{
+    if (text == "~" || text.empty()) {
+        return allow_inherit ? bind_inherit : static_cast<int16_t>(-1);
+    }
+    const int value = std::stoi(text);
+    if (value != -1 && (value < CTRL_GAMEPAD_SCAN_BASE || value > CTRL_GAMEPAD_RIGHT_TRIGGER)) {
+        xlog::warn("[Settings] Controller bind field '{}' is out of range, treating as unbound", text);
+        return -1;
+    }
+    return static_cast<int16_t>(value);
+}
+
 namespace
 {
 
@@ -461,8 +476,8 @@ bool alpine_player_settings_load(rf::Player* player)
         processed_keys.insert("GamepadRTAction");
     }
 
-    // Load binds. Three accepted forms, each with an optional trailing {GamepadScanCode} field
-    // on global lines:
+    // Load binds. Three accepted forms, each with optional trailing {ControllerButton},{ControllerAlt}
+    // fields:
     //   Bind:{Name}={ID},{ScanCode0},{ScanCode1},{MouseButtonID}                 (legacy, keyed by ID)
     //   Bind:global:{AlpineActionName}={ID},{ScanCode0},{ScanCode1},{MouseButtonID}
     //   BindCtx:{Context}:{Name}={ID},{ScanCode0},{ScanCode1},{MouseButtonID}    (context override)
@@ -527,29 +542,29 @@ bool alpine_player_settings_load(rf::Player* player)
                     const int16_t s0 = bind_field_from_ini(scan1, ctx_line, false);
                     const int16_t s1 = bind_field_from_ini(scan2, ctx_line, false);
                     const int16_t mb = bind_field_from_ini(mouse_btn, ctx_line, true);
+                    // Optional 5th and 6th fields: the BUTTON and ALT controller inputs.
+                    std::string pad_str1, pad_str2;
+                    std::getline(bind_values, pad_str1, ',');
+                    std::getline(bind_values, pad_str2, ',');
                     if (bind_ctx == BindContextId::Global) {
                         // Note action_name is not loaded for stock rows because the game uses
                         // localized strings for those; they are tracked by bind ID instead
                         player->settings.controls.bindings[bind_id].scan_codes[0] = s0;
                         player->settings.controls.bindings[bind_id].scan_codes[1] = s1;
                         player->settings.controls.bindings[bind_id].mouse_btn_id = mb;
+                        // A line without them leaves the controller defaults in place.
+                        if (!pad_str1.empty()) {
+                            gamepad_bind_action(bind_id, 0, pad_field_from_ini(pad_str1, false));
+                        }
+                        if (!pad_str2.empty()) {
+                            gamepad_bind_action(bind_id, 1, pad_field_from_ini(pad_str2, false));
+                        }
                     }
                     else {
-                        bind_context_set_override(bind_ctx, bind_id, BindOverride{{s0, s1}, mb});
-                    }
-
-                    // Optional 5th field on global lines: primary gamepad scan code
-                    std::string gp_sc_str;
-                    if (bind_ctx == BindContextId::Global && std::getline(bind_values, gp_sc_str, ',')
-                        && !gp_sc_str.empty()) {
-                        const int gp_sc = std::stoi(gp_sc_str);
-                        const int offset = gp_sc - CTRL_GAMEPAD_SCAN_BASE;
-                        if (offset >= 0 && offset < gamepad_get_button_count())
-                            gamepad_set_button_binding(offset, bind_id);
-                        else if (gp_sc == CTRL_GAMEPAD_LEFT_TRIGGER)
-                            gamepad_set_trigger_action(0, bind_id);
-                        else if (gp_sc == CTRL_GAMEPAD_RIGHT_TRIGGER)
-                            gamepad_set_trigger_action(1, bind_id);
+                        bind_context_set_override(
+                            bind_ctx, bind_id,
+                            BindOverride{{s0, s1}, mb,
+                                         {pad_field_from_ini(pad_str1, true), pad_field_from_ini(pad_str2, true)}});
                     }
 
                     xlog::info("[Settings] Loaded Bind:{}: {} = {}, {}, {}, {}", bind_context_ini_name(bind_ctx),
@@ -726,7 +741,7 @@ void alpine_control_config_serialize(std::ostream& file, rf::Player* player)
     const rf::ControlConfig& cc = player->settings.controls;
 
     file << "\n[ActionBinds]\n";
-    file << "; Format is Bind:{Name}={ID},{ScanCode0},{ScanCode1},{MouseButtonID},{GamepadScanCode}\n";
+    file << "; Format is Bind:{Name}={ID},{ScanCode0},{ScanCode1},{MouseButtonID},{ControllerButton},{ControllerAlt}\n";
     file << "; Alpine actions are written as Bind:global:{Name} and are matched by name on load.\n";
     file << "; BindCtx:vehicles:, BindCtx:spectator: and BindCtx:demos: lines override a binding\n";
     file << "; while in a vehicle, spectating or during demo playback; -1 means unbound\n";
@@ -739,20 +754,15 @@ void alpine_control_config_serialize(std::ostream& file, rf::Player* player)
     for (int i = 0; i < cc.num_bindings; ++i) {
         // Never the live item: a context applied right now has its overrides written into it.
         const BindOverride global = bind_context_global_binding(i);
-        int16_t gp_sc = -1;
-        const int btn = gamepad_get_button_for_action(i);
-        const int trig = gamepad_get_trigger_for_action(i);
-        if (btn >= 0) gp_sc = static_cast<int16_t>(CTRL_GAMEPAD_SCAN_BASE + btn);
-        else if (trig == 0) gp_sc = static_cast<int16_t>(CTRL_GAMEPAD_LEFT_TRIGGER);
-        else if (trig == 1) gp_sc = static_cast<int16_t>(CTRL_GAMEPAD_RIGHT_TRIGGER);
 
-        xlog::info("[Settings] Saving Bind: {} = {}, {}, {}, {}, {}",
+        xlog::info("[Settings] Saving Bind: {} = {}, {}, {}, {}, {}, {}",
                    cc.bindings[i].name,
                    i,
                    global.scan_codes[0],
                    global.scan_codes[1],
                    global.mouse_btn_id,
-                   gp_sc);
+                   global.pad_codes[0],
+                   global.pad_codes[1]);
 
         file << "Bind:";
         if (alpine_start >= 0 && i >= alpine_start) {
@@ -763,7 +773,8 @@ void alpine_control_config_serialize(std::ostream& file, rf::Player* player)
              << global.scan_codes[0] << ","
              << global.scan_codes[1] << ","
              << global.mouse_btn_id << ","
-             << gp_sc << "\n";
+             << global.pad_codes[0] << ","
+             << global.pad_codes[1] << "\n";
     }
 
     for (int c = 1; c < static_cast<int>(BindContextId::_count); ++c) {
@@ -777,7 +788,9 @@ void alpine_control_config_serialize(std::ostream& file, rf::Player* player)
                  << i << ","
                  << bind_field_to_ini(value->scan_codes[0]) << ","
                  << bind_field_to_ini(value->scan_codes[1]) << ","
-                 << bind_field_to_ini(value->mouse_btn_id) << "\n";
+                 << bind_field_to_ini(value->mouse_btn_id) << ","
+                 << bind_field_to_ini(value->pad_codes[0]) << ","
+                 << bind_field_to_ini(value->pad_codes[1]) << "\n";
         }
     }
 }

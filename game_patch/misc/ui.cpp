@@ -1882,11 +1882,3 @@ void ui_get_string_size(int* w, int* h, const char* s, int s_len, int font_num) 
     *h = static_cast<int>(*h / rf::ui::scale_y);
 #endif
 }
-
-// Placeholders until the controller bindings view is migrated to the new menu system.
-bool ui_ctrl_bindings_view_active()
-{
-    return false;
-}
-
-void ui_ctrl_bindings_view_reset() {}
