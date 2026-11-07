@@ -11,6 +11,7 @@
 #include <format>
 #include "../misc/misc.h"
 #include "../misc/alpine_settings.h"
+#include "../input/input.h"
 #include "../misc/level.h"
 #include "../rf/file/file.h"
 #include "../rf/object.h"
