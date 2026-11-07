@@ -21,6 +21,7 @@
 #include "../misc/alpine_settings.h"
 #include "../misc/settings_registry.h"
 #include "../input/rumble.h"
+#include "../misc/settings_registry.h"
 #include "alpine_rope.h"
 
 static std::array<uint8_t, 64U> weapon_reticle_custom_mask{}; // bit 0 = _0, bit 1 = _1
