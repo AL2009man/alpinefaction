@@ -12,9 +12,6 @@ const char* const labels_gyro_space[] = {"Yaw", "Roll", "Local", "Player", "Worl
 const char* const labels_gyro_autocalibration[] = {"Off", "Menu only", "Always"};
 const char* const labels_gyro_ratcheting[] = {"Always", "Hold (off)", "Hold (on)", "Toggle", "Touch (on)", "Touch (off)"};
 const char* const labels_rumble_filter[] = {"Off", "Auto", "On"};
-const char* const labels_gamepad_icons[] = {"Auto", "Generic", "Xbox 360", "Xbox One", "DualShock 3", "DualShock 4",
-                                            "DualSense", "Nintendo Switch", "GameCube", "Steam"};
-const char* const labels_input_prompts[] = {"Auto", "Controller", "Keyboard / Mouse"};
 
 const char* needs_motion_sensors()
 {
@@ -77,30 +74,6 @@ const SettingRow rows[] = {
         .widget = Wid::Toggle,
         .access = AccBool{&AGS::swap_sg_controls},
         .console_cmd = "cl_swapsgcontrols",
-    },
-    {
-        .id = "gamepad_icon_override",
-        .key = "GamepadIconOverride",
-        .label = "Controller glyphs",
-        .tooltip = "Controller button icons shown in prompts.",
-        .category = Cat::Input,
-        .subcategory = "Input Prompts",
-        .widget = Wid::Enum,
-        .access = AccInt{&AGS::gamepad_icon_override, nullptr, 0, 9},
-        ENUM_LABELS(labels_gamepad_icons),
-        .console_cmd = "gamepad_prompts",
-    },
-    {
-        .id = "input_prompt_override",
-        .key = "InputPromptMode",
-        .label = "Input prompts",
-        .tooltip = "Whether prompts show controller buttons or keyboard/mouse icons. Auto detects the last device used.",
-        .category = Cat::Input,
-        .subcategory = "Input Prompts",
-        .widget = Wid::Enum,
-        .access = AccInt{&AGS::input_prompt_override, nullptr, 0, 2},
-        ENUM_LABELS(labels_input_prompts),
-        .console_cmd = "input_prompts",
     },
     {
         .id = "mouse_sensitivity",
