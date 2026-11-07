@@ -22,6 +22,8 @@
 #include "../rf/input.h"
 #include "../rf/multi.h"
 #include "../sound/sound.h"
+#include "../input/gyro.h"
+#include "../input/gamepad.h"
 #include "../multi/multi.h"
 #include <shlwapi.h>
 #include <windows.h>
@@ -442,7 +444,25 @@ bool alpine_player_settings_load(rf::Player* player)
         }
     }
 
-    // Load binds. Three accepted forms:
+    // Per-button gamepad bindings
+    for (int b = 0; b < gamepad_get_button_count(); ++b) {
+        std::string key = "GamepadBtn_" + std::to_string(b);
+        if (settings.count(key)) {
+            gamepad_set_button_binding(b, std::stoi(settings[key]));
+            processed_keys.insert(key);
+        }
+    }
+    if (settings.count("GamepadLTAction")) {
+        gamepad_set_trigger_action(0, std::stoi(settings["GamepadLTAction"]));
+        processed_keys.insert("GamepadLTAction");
+    }
+    if (settings.count("GamepadRTAction")) {
+        gamepad_set_trigger_action(1, std::stoi(settings["GamepadRTAction"]));
+        processed_keys.insert("GamepadRTAction");
+    }
+
+    // Load binds. Three accepted forms, each with an optional trailing {GamepadScanCode} field
+    // on global lines:
     //   Bind:{Name}={ID},{ScanCode0},{ScanCode1},{MouseButtonID}                 (legacy, keyed by ID)
     //   Bind:global:{AlpineActionName}={ID},{ScanCode0},{ScanCode1},{MouseButtonID}
     //   BindCtx:{Context}:{Name}={ID},{ScanCode0},{ScanCode1},{MouseButtonID}    (context override)
@@ -516,6 +536,20 @@ bool alpine_player_settings_load(rf::Player* player)
                     }
                     else {
                         bind_context_set_override(bind_ctx, bind_id, BindOverride{{s0, s1}, mb});
+                    }
+
+                    // Optional 5th field on global lines: primary gamepad scan code
+                    std::string gp_sc_str;
+                    if (bind_ctx == BindContextId::Global && std::getline(bind_values, gp_sc_str, ',')
+                        && !gp_sc_str.empty()) {
+                        const int gp_sc = std::stoi(gp_sc_str);
+                        const int offset = gp_sc - CTRL_GAMEPAD_SCAN_BASE;
+                        if (offset >= 0 && offset < gamepad_get_button_count())
+                            gamepad_set_button_binding(offset, bind_id);
+                        else if (gp_sc == CTRL_GAMEPAD_LEFT_TRIGGER)
+                            gamepad_set_trigger_action(0, bind_id);
+                        else if (gp_sc == CTRL_GAMEPAD_RIGHT_TRIGGER)
+                            gamepad_set_trigger_action(1, bind_id);
                     }
 
                     xlog::info("[Settings] Loaded Bind:{}: {} = {}, {}, {}, {}", bind_context_ini_name(bind_ctx),
@@ -692,7 +726,7 @@ void alpine_control_config_serialize(std::ostream& file, rf::Player* player)
     const rf::ControlConfig& cc = player->settings.controls;
 
     file << "\n[ActionBinds]\n";
-    file << "; Format is Bind:{Name}={ID},{ScanCode0},{ScanCode1},{MouseButtonID}\n";
+    file << "; Format is Bind:{Name}={ID},{ScanCode0},{ScanCode1},{MouseButtonID},{GamepadScanCode}\n";
     file << "; Alpine actions are written as Bind:global:{Name} and are matched by name on load.\n";
     file << "; BindCtx:vehicles:, BindCtx:spectator: and BindCtx:demos: lines override a binding\n";
     file << "; while in a vehicle, spectating or during demo playback; -1 means unbound\n";
@@ -705,12 +739,20 @@ void alpine_control_config_serialize(std::ostream& file, rf::Player* player)
     for (int i = 0; i < cc.num_bindings; ++i) {
         // Never the live item: a context applied right now has its overrides written into it.
         const BindOverride global = bind_context_global_binding(i);
-        xlog::info("[Settings] Saving Bind: {} = {}, {}, {}, {}",
+        int16_t gp_sc = -1;
+        const int btn = gamepad_get_button_for_action(i);
+        const int trig = gamepad_get_trigger_for_action(i);
+        if (btn >= 0) gp_sc = static_cast<int16_t>(CTRL_GAMEPAD_SCAN_BASE + btn);
+        else if (trig == 0) gp_sc = static_cast<int16_t>(CTRL_GAMEPAD_LEFT_TRIGGER);
+        else if (trig == 1) gp_sc = static_cast<int16_t>(CTRL_GAMEPAD_RIGHT_TRIGGER);
+
+        xlog::info("[Settings] Saving Bind: {} = {}, {}, {}, {}, {}",
                    cc.bindings[i].name,
                    i,
                    global.scan_codes[0],
                    global.scan_codes[1],
-                   global.mouse_btn_id);
+                   global.mouse_btn_id,
+                   gp_sc);
 
         file << "Bind:";
         if (alpine_start >= 0 && i >= alpine_start) {
@@ -720,7 +762,8 @@ void alpine_control_config_serialize(std::ostream& file, rf::Player* player)
              << i << ","
              << global.scan_codes[0] << ","
              << global.scan_codes[1] << ","
-             << global.mouse_btn_id << "\n";
+             << global.mouse_btn_id << ","
+             << gp_sc << "\n";
     }
 
     for (int c = 1; c < static_cast<int>(BindContextId::_count); ++c) {
@@ -911,6 +954,7 @@ CallHook<void(rf::Player*)> player_settings_load_hook{
             player_settings_load_hook.call_target(player); // load players.cfg
 
             set_alpine_config_defaults();
+            gamepad_reset_to_defaults();
 
             // Display restart popup due to players.cfg import
             // players.cfg from legacy client version will import fine on first load, apart from Alpine controls
@@ -931,6 +975,9 @@ CallHook<void(rf::Player*)> player_settings_load_hook{
                 xlog::warn("Legacy RF settings file not found. Applying default settings.");
             }
         }
+
+        // Re-apply gyro calibration system
+        gyro_update_calibration_mode();
 
         // HACKFIX.  We need to load our settings earlier.
         if (g_alpine_game_config.sample_count != 1) {
