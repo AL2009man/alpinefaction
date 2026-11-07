@@ -3501,7 +3501,8 @@ void settings_menu_input()
         }
     }
 
-    const int wheel = rf::mouse_dz;
+    const int gamepad_wheel = gamepad_consume_menu_scroll();
+    const int wheel = rf::mouse_dz != 0 ? rf::mouse_dz : gamepad_wheel;
     int x = 0;
     int y = 0;
     int z = 0;
