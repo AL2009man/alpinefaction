@@ -12,22 +12,23 @@ namespace
 const char* const labels_mouse_scale[] = {"Classic", "Raw", "Modern"};
 const char* const labels_gyro_space[] = {"Yaw", "Roll", "Local", "Player", "World"};
 const char* const labels_gyro_autocalibration[] = {"Off", "Menu only", "Always"};
-const char* const labels_gyro_ratcheting[] = {"Always", "Hold (off)", "Hold (on)", "Toggle", "Touch (on)", "Touch (off)"};
+const char* const labels_gyro_ratcheting[] = {"Always", "Hold (off)", "Hold (on)", "Toggle", "Touch (on)", "Touch (off)", "Grip (on)", "Grip (off)"};
+const char* const labels_gyro_gripsense[] = {"Off", "Any", "Both", "Left", "Right"};
 const char* const labels_rumble_filter[] = {"Off", "Auto", "On"};
 
 const char* needs_motion_sensors()
 {
-    return gamepad_is_motionsensors_supported() ? nullptr : "this controller has no motion sensors";
+    return gamepad_is_motionsensors_supported() ? nullptr : "controller doesn't detect motion sensors";
 }
 
 const char* needs_touchpad()
 {
-    return gamepad_is_touchpad_supported() ? nullptr : "this controller has no touchpad";
+    return gamepad_is_touchpad_supported() ? nullptr : "controller doesn't detect touchpad";
 }
 
-bool gyro_ratcheting_offered(int value)
+const char* needs_capsense_grip()
 {
-    return value < 4 || gamepad_is_touchpad_supported();
+    return gamepad_has_capsense_grip() ? nullptr : "controller doesn't detect gripsense";
 }
 
 const char* needs_gyro_enabled()
@@ -38,9 +39,41 @@ const char* needs_gyro_enabled()
     return g_alpine_game_config.gamepad_gyro_enabled ? nullptr : "turn on Gyro camera first";
 }
 
+bool gyro_ratcheting_offered(int value)
+{
+    if (value >= 6) {
+        return gamepad_has_capsense_grip();
+    }
+    return value < 4 || gamepad_is_touchpad_supported();
+}
+
+const char* needs_gripsense()
+{
+    if (const char* reason = needs_gyro_enabled()) {
+        return reason;
+    }
+    if (const char* reason = needs_capsense_grip()) {
+        return reason;
+    }
+    return g_alpine_game_config.gamepad_gyro_ratcheting >= 4 ? nullptr
+        : "set Gyro ratcheting to a Touch or Grip mode first";
+}
+
 const char* needs_trigger_rumble()
 {
     return gamepad_is_trigger_rumble_supported() ? nullptr : "this controller has no trigger rumble";
+}
+
+const char* needs_body_rumble()
+{
+    return g_alpine_game_config.gamepad_rumble_intensity > 0.0f ? nullptr : "turn on Rumble intensity first";
+}
+
+const char* needs_weapon_rumble_output()
+{
+    return g_alpine_game_config.gamepad_rumble_intensity > 0.0f
+        || (g_alpine_game_config.gamepad_trigger_rumble_intensity > 0.0f && gamepad_is_trigger_rumble_supported())
+        ? nullptr : "turn on Rumble or Trigger Rumble intensity first";
 }
 
 const char* needs_flick_stick()
@@ -62,8 +95,12 @@ void describe_camera_sensitivity(std::string& text)
 
 void describe_gyro_ratcheting(std::string& text)
 {
-    if (g_alpine_game_config.gamepad_gyro_ratcheting >= 4 && needs_touchpad()) {
+    const int mode = g_alpine_game_config.gamepad_gyro_ratcheting;
+    if ((mode == 4 || mode == 5) && needs_touchpad()) {
         text = "(No touchpad detected; Always On is now active until a touchpad is available.) " + text;
+    }
+    else if (mode >= 6 && needs_capsense_grip()) {
+        text = "(No Gripsense detected; Always On is now active until a controller with gripsense is available.) " + text;
     }
     else if (g_alpine_game_config.gamepad_gyro_ratcheting >= 1
         && g_alpine_game_config.gamepad_gyro_ratcheting <= 3
@@ -503,16 +540,28 @@ const SettingRow rows[] = {
         .id = "gamepad_gyro_ratcheting",
         .key = "GamepadGyroRatchetingMode",
         .label = "Gyro ratcheting",
-        .tooltip = "When gyro camera is active: can it be always enabled, held, toggled or touched.",
+        .tooltip = "When gyro camera is active: can it be always enabled, held, toggled, touched or gripped.",
         .category = Cat::Input,
         .subcategory = "Controller - Gyro",
         .widget = Wid::Enum,
-        .access = AccInt{&AGS::gamepad_gyro_ratcheting, nullptr, 0, 5},
+        .access = AccInt{&AGS::gamepad_gyro_ratcheting, nullptr, 0, 7},
         ENUM_LABELS(labels_gyro_ratcheting),
         .enum_offered = gyro_ratcheting_offered,
         .console_cmd = "gyro_ratcheting",
         .unavailable_reason = needs_gyro_enabled,
         .describe = describe_gyro_ratcheting,
+    },
+    {
+        .id = "gamepad_gyro_gripsense",
+        .key = "GamepadGyroGripsense",
+        .label = "Gripsense",
+        .tooltip = "Which grips count as held for the Touch and Grip ratcheting modes: any, both, left or right.",
+        .category = Cat::Input,
+        .subcategory = "Controller - Gyro",
+        .widget = Wid::Enum,
+        .access = AccInt{&AGS::gamepad_gyro_gripsense, nullptr, 0, 4},
+        ENUM_LABELS(labels_gyro_gripsense),
+        .unavailable_reason = needs_gripsense,
     },
     {
         .id = "gamepad_gyro_tightening",
@@ -787,6 +836,7 @@ const SettingRow rows[] = {
         .access = AccInt{&AGS::gamepad_rumble_vibration_filter, nullptr, 0, 2},
         ENUM_LABELS(labels_rumble_filter),
         .console_cmd = "joy_rumble_vibration_filter",
+        .unavailable_reason = needs_body_rumble,
     },
     {
         .id = "gamepad_weapon_rumble_enabled",
@@ -798,6 +848,7 @@ const SettingRow rows[] = {
         .widget = Wid::Toggle,
         .access = AccBool{&AGS::gamepad_weapon_rumble_enabled},
         .console_cmd = "joy_rumble_weapon",
+        .unavailable_reason = needs_weapon_rumble_output,
     },
     {
         .id = "gamepad_environmental_rumble_enabled",
@@ -809,6 +860,7 @@ const SettingRow rows[] = {
         .widget = Wid::Toggle,
         .access = AccBool{&AGS::gamepad_environmental_rumble_enabled},
         .console_cmd = "joy_rumble_environmental",
+        .unavailable_reason = needs_body_rumble,
     },
     {
         .id = "gamepad_rumble_when_primary",
@@ -820,6 +872,7 @@ const SettingRow rows[] = {
         .widget = Wid::Toggle,
         .access = AccBool{&AGS::gamepad_rumble_when_primary},
         .console_cmd = "joy_rumble_when_primary",
+        .unavailable_reason = needs_body_rumble,
     },
     {
         .id = "gamepad_lightbar_effects",

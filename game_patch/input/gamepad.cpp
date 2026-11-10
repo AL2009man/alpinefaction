@@ -75,7 +75,6 @@ static bool g_action_curr[k_action_count] = {};
 static int g_action_pad[k_action_count][2];
 
 static float g_message_log_close_cooldown = 0.0f;
-static int g_pending_scroll_delta = 0;
 static float g_menu_cursor_accum_x = 0.0f;
 static float g_menu_cursor_accum_y = 0.0f;
 static bool g_gyro_menu_cursor_active = false;
@@ -98,6 +97,14 @@ struct TouchpadState {
 };
 static TouchpadState g_touchpad;
 static bool is_gamepad_controls_rebind_active();
+
+// Capacitive sense state (stick touch / grip touch, e.g. Steam Controller 2, Steam Deck)
+static bool g_capsense_left_stick  = false;
+static bool g_capsense_right_stick = false;
+static bool g_capsense_left_grip   = false;
+static bool g_capsense_right_grip  = false;
+static bool g_capsense_grip_supported  = false; // true if any connected controller has grip capsense (or an event was received)
+static bool g_capsense_stick_supported = false; // true if any connected controller has stick capsense (or an event was received)
 
 static float g_move_lx = 0.0f, g_move_ly = 0.0f;
 static float g_move_mag = 0.0f;
@@ -139,7 +146,7 @@ SDL_Gamepad* gamepad_get_slot(int idx)
 // Returns the gamepad that most recently produced input, falling back to primary.
 SDL_Gamepad* gamepad_get_last_active()
 {
-    SDL_JoystickID last_id = input_get_last_active_gamepad_id();
+    SDL_JoystickID last_id = input_recent_gamepad_id();
     if (last_id != 0) {
         for (auto* gp : g_gamepads)
             if (gp && SDL_GetGamepadID(gp) == last_id)
@@ -247,13 +254,19 @@ static void try_open_gamepad(SDL_JoystickID id)
     if (!g_touchpad_supported)
         try_enable_gamepad_touchpad(gp, g_touchpad_supported);
     try_enable_gamepad_sensors(gp);
+    g_capsense_grip_supported  |= SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_LEFT_GRIP)
+                               || SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_RIGHT_GRIP);
+    g_capsense_stick_supported |= SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_LEFT_STICK)
+                               || SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_RIGHT_STICK);
+    xlog::info("Gamepad capsense grip supported: {}", g_capsense_grip_supported);
+    xlog::info("Gamepad capsense stick supported: {}", g_capsense_stick_supported);
 }
 
 void gamepad_rumble(uint16_t low_freq, uint16_t high_freq, uint32_t duration_ms, bool ignore_filter)
 {
     if (!gamepad_any_open() || !g_rumble_supported)
         return;
-    if (g_alpine_game_config.gamepad_rumble_when_primary && !input_last_gamepad_active())
+    if (g_alpine_game_config.gamepad_rumble_when_primary && input_active_device() != InputDevice::Gamepad)
         return;
     if (g_alpine_game_config.gamepad_rumble_intensity <= 0.0f)
         return;
@@ -435,8 +448,7 @@ static void reset_gamepad_input_state()
     g_menu_cursor_accum_x = 0.0f;
     g_menu_cursor_accum_y = 0.0f;
     g_gyro_menu_cursor_active = false;
-    input_reset_last_active_gamepad_id();
-    g_pending_scroll_delta = 0;
+    input_clear_recent_gamepad();
 }
 
 static float gamepad_get_axis(SDL_Gamepad* gp, SDL_GamepadAxis axis)
@@ -617,7 +629,7 @@ static void menu_nav_apply_cursor_delta(float dx, float dy)
     if (ix == 0 && iy == 0) return;
     menu_nav_move_cursor(ix, iy);
     g_menu_nav.last_nav_was_dpad = false;
-    input_active_gamepad();
+    input_record_activity(InputDevice::Gamepad);
 }
 
 static int dpad_btn_to_navkey(int btn)
@@ -653,7 +665,7 @@ static void handle_trigger_down(int trigger_idx, SDL_JoystickID which)
     if (trigger_idx == 0) g_lt_was_down = true;
     else g_rt_was_down = true;
 
-    input_active_gamepad(which);
+    input_record_activity(InputDevice::Gamepad, which);
     if (g_message_log_close_cooldown > 0.0f) return;
 
     int16_t gp_sc = (trigger_idx == 0) ? static_cast<int16_t>(CTRL_GAMEPAD_LEFT_TRIGGER)
@@ -878,6 +890,10 @@ static void release_all_gamepad_inputs()
     inject_action_key(g_trigger_action[1], false);
     menu_nav_release_click();
     g_touchpad = {};
+    g_capsense_left_stick  = false;
+    g_capsense_right_stick = false;
+    g_capsense_left_grip   = false;
+    g_capsense_right_grip  = false;
     g_sensor_last_gyro_ts  = 0;
     g_sensor_last_accel_ts = 0;
     memset(g_sensor_accel, 0, sizeof(g_sensor_accel));
@@ -892,6 +908,8 @@ static void reset_gamepad_capability_flags()
     g_trigger_rumble_supported = false;
     g_led_supported            = false;
     g_touchpad_supported       = false;
+    g_capsense_grip_supported  = false;
+    g_capsense_stick_supported = false;
 }
 
 static void disconnect_all_gamepads()
@@ -925,22 +943,19 @@ static void handle_gamepad_removed(const SDL_GamepadDeviceEvent& ev)
     }
 
     // Clear sensor flag if no remaining controller has sensors enabled
-    bool any_sensor = false;
-    for (auto* gp : g_gamepads)
-        if (gp && SDL_GamepadSensorEnabled(gp, SDL_SENSOR_GYRO)) { any_sensor = true; break; }
-    if (!any_sensor)
-        g_motion_sensors_supported = false;
+    bool any_sensor = false, any_capsense_grip = false, any_capsense_stick = false;
+    for (auto* gp : g_gamepads) {
+        if (!gp) continue;
+        if (SDL_GamepadSensorEnabled(gp, SDL_SENSOR_GYRO)) any_sensor = true;
+        if (SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_LEFT_GRIP)
+         || SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_RIGHT_GRIP))   any_capsense_grip = true;
+        if (SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_LEFT_STICK)
+         || SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_RIGHT_STICK))  any_capsense_stick = true;
+    }
+    if (!any_sensor)         g_motion_sensors_supported = false;
+    if (!any_capsense_grip)  g_capsense_grip_supported  = false;
+    if (!any_capsense_stick) g_capsense_stick_supported = false;
     xlog::info("Remaining gamepad: '{}'", SDL_GetGamepadName(gamepad_get_primary()));
-}
-
-// Blocks MISC3-MISC6 (capsense/gripsense) from rebinding on hardware that fires them as buttons.
-// TODO: remove this workaround when SDL 3.6.0 comes out, it'll have proper capsense/gripsense support.
-static bool is_capsense_binding_block(SDL_Gamepad* ctrl, int button)
-{
-    if (button < SDL_GAMEPAD_BUTTON_MISC3 || button > SDL_GAMEPAD_BUTTON_MISC6 || !ctrl)
-        return false;
-    SDL_GamepadType type = SDL_GetGamepadType(ctrl);
-    return type == SDL_GAMEPAD_TYPE_STEAM;
 }
 
 static void handle_gamepad_button_down(const SDL_GamepadButtonEvent& ev)
@@ -948,14 +963,12 @@ static void handle_gamepad_button_down(const SDL_GamepadButtonEvent& ev)
     if (g_message_log_close_cooldown > 0.0f) return;
     if (!is_gamepad_input_active() || !is_open_gamepad_id(ev.which)) return;
 
-    input_active_gamepad(ev.which);
+    input_record_activity(InputDevice::Gamepad, ev.which);
 
     if (g_bind_capture_active) {
         if (ev.button == SDL_GAMEPAD_BUTTON_START || ev.button == SDL_GAMEPAD_BUTTON_GUIDE) {
             menu_nav_inject_key(rf::KEY_ESC);
         } else {
-            if (is_capsense_binding_block(SDL_GetGamepadFromID(ev.which), ev.button))
-                return;
             gamepad_capture_bind_input(static_cast<int16_t>(CTRL_GAMEPAD_SCAN_BASE + ev.button));
         }
         return;
@@ -1021,12 +1034,12 @@ static void handle_gamepad_axis_motion(const SDL_GamepadAxisEvent& ev)
     case SDL_GAMEPAD_AXIS_LEFTX:
     case SDL_GAMEPAD_AXIS_LEFTY:
         if (g_message_log_close_cooldown <= 0.0f && std::abs(v) > g_alpine_game_config.gamepad_move_deadzone)
-            input_active_gamepad(ev.which);
+            input_record_activity(InputDevice::Gamepad, ev.which);
         break;
     case SDL_GAMEPAD_AXIS_RIGHTX:
     case SDL_GAMEPAD_AXIS_RIGHTY:
         if (g_message_log_close_cooldown <= 0.0f && std::abs(v) > g_alpine_game_config.gamepad_look_deadzone)
-            input_active_gamepad(ev.which);
+            input_record_activity(InputDevice::Gamepad, ev.which);
         break;
     case SDL_GAMEPAD_AXIS_LEFT_TRIGGER:
         if ((v > 0.5f) != g_lt_was_down)
@@ -1059,7 +1072,7 @@ static void handle_gamepad_touchpad_down(const SDL_GamepadTouchpadEvent& ev)
     g_touchpad.last_y = ev.y;
     g_menu_cursor_accum_x = 0.0f;
     g_menu_cursor_accum_y = 0.0f;
-    input_active_gamepad(ev.which);
+    input_record_activity(InputDevice::Gamepad, ev.which);
 }
 
 static void handle_gamepad_touchpad_motion(const SDL_GamepadTouchpadEvent& ev)
@@ -1088,9 +1101,36 @@ static void handle_gamepad_touchpad_up(const SDL_GamepadTouchpadEvent& ev)
     g_touchpad.active = false;
 }
 
+static void handle_gamepad_capsense(const SDL_GamepadCapSenseEvent& ev)
+{
+    if (!is_gamepad_input_active() || !is_open_gamepad_id(ev.which)) return;
+    switch (static_cast<SDL_GamepadCapSenseType>(ev.capsense)) {
+    case SDL_GAMEPAD_CAPSENSE_LEFT_STICK:  g_capsense_left_stick  = ev.down; g_capsense_stick_supported = true; break;
+    case SDL_GAMEPAD_CAPSENSE_RIGHT_STICK: g_capsense_right_stick = ev.down; g_capsense_stick_supported = true; break;
+    case SDL_GAMEPAD_CAPSENSE_LEFT_GRIP:   g_capsense_left_grip   = ev.down; g_capsense_grip_supported  = true; break;
+    case SDL_GAMEPAD_CAPSENSE_RIGHT_GRIP:  g_capsense_right_grip  = ev.down; g_capsense_grip_supported  = true; break;
+    default: break;
+    }
+}
+
+bool gamepad_is_grip_held()
+{
+    switch (g_alpine_game_config.gamepad_gyro_gripsense) {
+    case 1: return g_capsense_left_grip || g_capsense_right_grip; // Any
+    case 2: return g_capsense_left_grip && g_capsense_right_grip; // Both
+    case 3: return g_capsense_left_grip;                          // Left
+    case 4: return g_capsense_right_grip;                         // Right
+    default: return false;                                        // Off
+    }
+}
+
 bool gamepad_is_touchpad_touched()
 {
-    return g_touchpad.active;
+    // Camera stick is the right stick unless sticks are swapped
+    bool cam_stick_capsense = g_alpine_game_config.gamepad_swap_sticks
+        ? g_capsense_left_stick
+        : g_capsense_right_stick;
+    return g_touchpad.active || cam_stick_capsense || gamepad_is_grip_held();
 }
 
 static void handle_gamepad_sensor_update(const SDL_GamepadSensorEvent& ev)
@@ -1160,6 +1200,10 @@ void process_gamepad_event(const SDL_Event& ev)
     case SDL_EVENT_GAMEPAD_SENSOR_UPDATE:
         handle_gamepad_sensor_update(ev.gsensor);
         break;
+    case SDL_EVENT_GAMEPAD_CAPSENSE_TOUCH:
+    case SDL_EVENT_GAMEPAD_CAPSENSE_RELEASE:
+        handle_gamepad_capsense(ev.gcapsense);
+        break;
     default:
         break;
     }
@@ -1208,6 +1252,10 @@ static void menu_nav_tick_dpad_repeat()
 
 static void menu_nav_tick_scroll()
 {
+    if (rf::gameseq_get_state() == rf::GS_OPTIONS_MENU && !legacy_menus_enabled()) {
+        g_menu_nav.scroll_timer = 0.0f;
+        return;
+    }
     constexpr float k_scroll_deadzone = 0.24f;
     float ry = get_axis(SDL_GAMEPAD_AXIS_RIGHTY, k_scroll_deadzone);
     if (ry == 0.0f) {
@@ -1217,7 +1265,6 @@ static void menu_nav_tick_scroll()
     g_menu_nav.scroll_timer -= rf::frametime;
     if (g_menu_nav.scroll_timer > 0.0f) return;
     rf::mouse_dz = (ry < 0.0f) ? 1 : -1;
-    g_pending_scroll_delta = rf::mouse_dz;
     if (rf::gameseq_get_state() == rf::GS_MESSAGE_LOG) {
         if (ry < 0.0f)
             rf::ui::message_log_up_on_click(-1, -1);
@@ -1227,18 +1274,21 @@ static void menu_nav_tick_scroll()
     g_menu_nav.scroll_timer = 0.12f;
 }
 
-int gamepad_consume_menu_scroll()
+float gamepad_consume_menu_scroll()
 {
-    int v = g_pending_scroll_delta;
-    g_pending_scroll_delta = 0;
-    return v;
+    if (g_message_log_close_cooldown > 0.0f || !is_gamepad_input_active()
+        || !is_gamepad_menu_navigation_state()) {
+        return 0.0f;
+    }
+    constexpr float k_scroll_deadzone = 0.24f;
+    return std::clamp(get_axis(SDL_GAMEPAD_AXIS_RIGHTY, k_scroll_deadzone), -1.0f, 1.0f);
 }
 
 static void gamepad_do_menu_frame()
 {
     if (g_menu_nav.deferred_btn_down != -1) {
         if (menu_nav_on_button_down(g_menu_nav.deferred_btn_down))
-            input_active_gamepad();
+            input_record_activity(InputDevice::Gamepad);
         g_menu_nav.deferred_btn_down = -1;
     }
     if (g_menu_nav.deferred_btn_up != -1) {
@@ -2166,6 +2216,16 @@ bool gamepad_is_trigger_rumble_supported()
     return g_trigger_rumble_supported;
 }
 
+bool gamepad_has_capsense_grip()
+{
+    return g_capsense_grip_supported;
+}
+
+bool gamepad_has_capsense_stick()
+{
+    return g_capsense_stick_supported;
+}
+
 bool gamepad_is_touchpad_supported()
 {
     for (auto* gp : g_gamepads)
@@ -2494,13 +2554,6 @@ void gamepad_sdl_init()
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS3, "1");
     SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS3_SIXAXIS_DRIVER, "1");
-    if (g_alpine_system_config.gamepad_rawinput_enabled) {
-        SDL_SetHint(SDL_HINT_JOYSTICK_RAWINPUT, "1");
-        SDL_SetHint(SDL_HINT_JOYSTICK_RAWINPUT_CORRELATE_XINPUT, "1");
-    } else {
-        SDL_SetHint(SDL_HINT_JOYSTICK_RAWINPUT, "0");
-        SDL_SetHint(SDL_HINT_JOYSTICK_RAWINPUT_CORRELATE_XINPUT, "0");
-    }
 
     if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD)) {
         xlog::error("Failed to initialize SDL gamepad subsystem: {}", SDL_GetError());

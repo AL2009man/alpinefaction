@@ -206,6 +206,8 @@ static bool g_gyro_toggle_prev_down = false;
 //   3 = Toggle  -> button press toggles gyro either on/off
 //   4 = Touch On -> active while touchpad is touched (binding ignored)
 //   5 = Touch Off-> active while touchpad is NOT touched (binding ignored)
+//   6 = Grip On  -> active while grip capsense held (gripsense setting applies; binding ignored)
+//   7 = Grip Off -> active while grip capsense NOT held (gripsense setting applies; binding ignored)
 bool gyro_ratcheting_is_active()
 {
     using namespace rf;
@@ -214,12 +216,15 @@ bool gyro_ratcheting_is_active()
 
     const auto action = get_af_control(AlpineControlConfigAction::AF_ACTION_GYRO_RATCHETING);
 
-    int mode = std::clamp(g_alpine_game_config.gamepad_gyro_ratcheting, 0, 5);
+    int mode = std::clamp(g_alpine_game_config.gamepad_gyro_ratcheting, 0, 7);
 
     if (mode == 0) // Always
         return true;
 
-    if (mode >= 4 && !gamepad_is_touchpad_supported())
+    if ((mode == 4 || mode == 5) && !gamepad_is_touchpad_supported())
+        return true;
+
+    if (mode >= 6 && !gamepad_has_capsense_grip())
         return true;
 
     if (mode == 4) // Touch On
@@ -227,6 +232,12 @@ bool gyro_ratcheting_is_active()
 
     if (mode == 5) // Touch Off
         return !gamepad_is_touchpad_touched();
+
+    if (mode == 6) // Grip On
+        return gamepad_is_grip_held();
+
+    if (mode == 7) // Grip Off
+        return !gamepad_is_grip_held();
 
     if (!gyro_action_has_binding(action))
         return true; // no modifier bound — gyro always on
@@ -254,16 +265,21 @@ ConsoleCommand2 gyro_ratcheting_cmd{
     "gyro_ratcheting",
     [](std::optional<int> val) {
         if (val) {
-            g_alpine_game_config.gamepad_gyro_ratcheting = std::clamp(val.value(), 0, 5);
+            int new_mode = std::clamp(val.value(), 0, 7);
+            if (new_mode >= 6 && !gamepad_has_capsense_grip()) {
+                rf::console::print("Gyro ratcheting mode {}: capsense grip not supported for this controller", new_mode);
+                return;
+            }
+            g_alpine_game_config.gamepad_gyro_ratcheting = new_mode;
             g_gyro_toggle_state = true;
             g_gyro_toggle_prev_down = false;
         }
         int mode = g_alpine_game_config.gamepad_gyro_ratcheting;
-        static const char* mode_names[] = {"Always", "Hold Off", "Hold On", "Toggle", "Touch On", "Touch Off"};
+        static const char* mode_names[] = {"Always", "Hold Off", "Hold On", "Toggle", "Touch On", "Touch Off", "Grip On", "Grip Off"};
         rf::console::print("Gyro ratcheting mode: {} ({})", mode_names[mode], mode);
     },
     "Set gyro ratcheting mode",
-    "gyro_ratcheting <0|1|2|3|4|5> (valid values: 0=Always, 1=Hold Off, 2=Hold On, 3=Toggle, 4=Touch On, 5=Touch Off)",
+    "gyro_ratcheting <0|1|2|3|4|5|6|7> (valid values: 0=Always, 1=Hold Off, 2=Hold On, 3=Toggle, 4=Touch On, 5=Touch Off, 6=Grip On, 7=Grip Off)",
 };
 
 ConsoleCommand2 gyro_autocalibration_cmd{

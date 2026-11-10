@@ -1,22 +1,18 @@
-# To update or downgrade SDL3, change the SDL3_VERSION and SDL3_HASH (sha256) variables below.
-# Version histories and sha256 hashes can be found at SDL release pages: https://github.com/libsdl-org/SDL/releases
+# Tracks SDL3 Master branch for testing Steam Controller 2 features
+# To update, change GIT_TAG to a commit hash from that branch.
 # Read the sdl wiki for more info about CMake-configurations: https://wiki.libsdl.org/SDL3/README-cmake
-
-set(SDL3_VERSION "3.4.20")
-set(SDL3_HASH "f3bb06f55bed9557227a700af2ea62e49497ebdf58037732a731a5fb3ef8581f")
 
 include(FetchContent)
 FetchContent_Declare(
     SDL3
-    URL "https://github.com/libsdl-org/SDL/releases/download/release-${SDL3_VERSION}/SDL3-${SDL3_VERSION}.tar.gz"
-    URL_HASH SHA256=${SDL3_HASH}
-    DOWNLOAD_EXTRACT_TIMESTAMP FALSE
+    GIT_REPOSITORY "https://github.com/libsdl-org/SDL.git"
+    GIT_TAG        "95afe3c9f2c8a38916e8385cfadb27958f912c4a"
 )
 
-set(SDL_STATIC      ON  CACHE BOOL "" FORCE)
-set(SDL_SHARED      OFF CACHE BOOL "" FORCE)
-set(SDL_TEST        OFF CACHE BOOL "" FORCE)
-set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+set(SDL_STATIC ON  CACHE BOOL "" FORCE)
+set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+set(SDL_TEST   OFF CACHE BOOL "" FORCE)
+set(SDL_PRESEED                  OFF CACHE BOOL     "" FORCE)
 
 # Disable all subsystems except those required for gamepad/joystick input
 set(SDL_AUDIO        OFF CACHE BOOL "" FORCE)

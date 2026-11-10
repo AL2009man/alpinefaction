@@ -33,6 +33,7 @@ bool gamepad_is_motionsensors_supported();
 bool gamepad_is_trigger_rumble_supported();
 bool gamepad_is_touchpad_supported();
 bool gamepad_is_touchpad_touched();
+bool gamepad_has_capsense_grip();
 
 // Controller binding UI
 int         gamepad_get_button_for_action(int action_idx);  // -1 if unbound
@@ -76,5 +77,8 @@ int  gamepad_bind_action(int action_idx, int slot, int code);
 // conflicts itself.
 void gamepad_set_action_code(int action_idx, int slot, int code);
 
-// Returns and clears any pending scroll delta produced by the right-stick menu scroll tick (+1=up, -1=down, 0=none)
-int gamepad_consume_menu_scroll();
+// Right-stick menu scroll direction and magnitude (-1=up, +1=down).
+float gamepad_consume_menu_scroll();
+
+// Returns true if grip capsense is active (respects gamepad_gyro_gripsense setting; ignores touchpad and stick caps)
+bool gamepad_is_grip_held();
