@@ -1277,11 +1277,27 @@ void push_binding_entries(std::vector<Entry>& entries)
     }
 }
 
+bool row_hidden_without_dual_touchpads(const SettingRow& row)
+{
+    if (row.category != SettingCategory::Input || !row.subcategory
+        || std::string_view{row.subcategory} != "Controller - Touchpad") {
+        return false;
+    }
+    const std::string_view id{row.id};
+    if (id == "gamepad_single_touchpad_camera") {
+        return !gamepad_is_touchpad_supported() || gamepad_has_dual_touchpads();
+    }
+    if (id == "gamepad_swap_touchpads") {
+        return !gamepad_has_dual_touchpads();
+    }
+    return !gamepad_touchpad_camera_available();
+}
+
 std::vector<Entry> build_category_entries(SettingCategory category)
 {
     std::vector<const SettingRow*> rows;
     for (const SettingRow* row : settings_in_category(category)) {
-        if (!setting_hidden_in_menu(*row)) {
+        if (!setting_hidden_in_menu(*row) && !row_hidden_without_dual_touchpads(*row)) {
             rows.push_back(row);
         }
     }
@@ -1360,7 +1376,7 @@ std::vector<Entry> build_search_entries(std::string_view query, std::vector<std:
     for (const SettingCategory category : category_order) {
         bool captioned = false;
         for (const SettingRow* row : settings_in_category(category)) {
-            if ((row->flags & SF_HIDDEN) || !row_matches(*row, query)) {
+            if ((row->flags & SF_HIDDEN) || row_hidden_without_dual_touchpads(*row) || !row_matches(*row, query)) {
                 continue;
             }
             if (!captioned) {
@@ -1443,7 +1459,7 @@ int panel_slider_readout_w(const UiContext& ctx, const std::vector<Entry>& entri
     }
     else {
         for (const SettingRow* row : settings_in_category(*category)) {
-            if (!(row->flags & SF_HIDDEN)) {
+            if (!(row->flags & SF_HIDDEN) && !row_hidden_without_dual_touchpads(*row)) {
                 out = std::max(out, row_slider_readout_w(ctx, *row, font));
             }
         }
@@ -1641,7 +1657,8 @@ void do_row_widget(UiContext& ctx, const SettingRow& row, const UiRect& row_rect
             }
             if (count <= cycler_max_options && pos >= 0
                 && std::string_view{row.id} != "gamepad_gyro_autocalibration"
-                && std::string_view{row.id} != "gamepad_gyro_ratcheting") {
+                && std::string_view{row.id} != "gamepad_gyro_ratcheting"
+                && std::string_view{row.id} != "gamepad_touchpad_filter") {
                 const UiRect r = right_rect(ctx, ctl_right, row_rect, skin::control_w, skin::widget_h);
                 const int delta = skin_cycler(ctx, r, row.enum_labels[offered[pos]], font, enabled, id, hot);
                 if (delta != 0 && enabled) {
@@ -3537,10 +3554,13 @@ void settings_menu_input()
     g_ui.begin_frame(x, y, capturing ? 0 : wheel, !capturing && rf::mouse_button_is_down(0),
         !capturing && rf::mouse_was_button_pressed(0) != 0,
         !capturing && rf::mouse_was_button_pressed(1) != 0);
+    const float touchpad_scroll_steps = gamepad_consume_touchpad_menu_scroll_steps();
     if (!capturing && !g_ui.lmb_down && !rf::console::console_is_visible()) {
         constexpr float scroll_speed = 880.0f;
-        g_ui.analog_scroll = gamepad_consume_menu_scroll() * scroll_speed * menu_screen_scale()
-            * std::max(0.0f, rf::frametime);
+        const float scale = menu_screen_scale();
+        g_ui.analog_scroll = gamepad_consume_menu_scroll() * scroll_speed * scale
+                * std::max(0.0f, rf::frametime)
+            + touchpad_scroll_steps * skin::row_h * 3.0f * scale;
     }
     g_ui.begin_pass(UiPass::HitTest);
     settings_menu_build(g_ui);
@@ -3631,6 +3651,8 @@ void settings_menu_do_frame(bool paused)
     // paused = 1 means a stock popup owns input this frame; it renders after us and on top.
     if (!paused && !g_closing) {
         settings_menu_input();
+    } else {
+        gamepad_consume_touchpad_menu_scroll_steps();
     }
 
     rf::gr::reset_clip();

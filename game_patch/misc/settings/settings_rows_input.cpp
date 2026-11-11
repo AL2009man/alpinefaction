@@ -15,6 +15,7 @@ const char* const labels_gyro_autocalibration[] = {"Off", "Menu only", "Always"}
 const char* const labels_gyro_ratcheting[] = {"Always", "Hold (off)", "Hold (on)", "Toggle", "Touch (on)", "Touch (off)", "Grip (on)", "Grip (off)"};
 const char* const labels_gyro_gripsense[] = {"Off", "Any", "Both", "Left", "Right"};
 const char* const labels_rumble_filter[] = {"Off", "Auto", "On"};
+const char* const labels_touchpad_filter[] = {"Auto", "On", "Off"};
 
 const char* needs_motion_sensors()
 {
@@ -28,15 +29,7 @@ const char* needs_touchpad()
 
 const char* needs_capsense_grip()
 {
-    return gamepad_has_capsense_grip() ? nullptr : "controller doesn't detect gripsense";
-}
-
-const char* needs_gyro_enabled()
-{
-    if (const char* reason = needs_motion_sensors()) {
-        return reason;
-    }
-    return g_alpine_game_config.gamepad_gyro_enabled ? nullptr : "turn on Gyro camera first";
+    return gamepad_has_capsense_grip() ? nullptr : "controller doesn't detect grip sensing";
 }
 
 bool gyro_ratcheting_offered(int value)
@@ -45,6 +38,31 @@ bool gyro_ratcheting_offered(int value)
         return gamepad_has_capsense_grip();
     }
     return value < 4 || gamepad_is_touchpad_supported();
+}
+
+const char* needs_dual_touchpads()
+{
+    return gamepad_has_dual_touchpads() ? nullptr : "controller doesn't detect two touchpads";
+}
+
+const char* needs_touchpad_camera()
+{
+    if (!gamepad_touchpad_camera_available())
+        return "enable single touchpad camera or connect a dual-touchpad controller";
+    return g_alpine_game_config.gamepad_touchpad_sensitivity > 0.0f ? nullptr : "set Touchpad camera sensitivity first";
+}
+
+const char* needs_touchpad_camera_device()
+{
+    return gamepad_touchpad_camera_available() ? nullptr : "enable single touchpad camera or connect a dual-touchpad controller";
+}
+
+const char* needs_gyro_enabled()
+{
+    if (const char* reason = needs_motion_sensors()) {
+        return reason;
+    }
+    return g_alpine_game_config.gamepad_gyro_enabled ? nullptr : "turn on Gyro camera first";
 }
 
 const char* needs_gripsense()
@@ -61,7 +79,7 @@ const char* needs_gripsense()
 
 const char* needs_trigger_rumble()
 {
-    return gamepad_is_trigger_rumble_supported() ? nullptr : "this controller has no trigger rumble";
+    return gamepad_is_trigger_rumble_supported() ? nullptr : " controller doesn't detect trigger rumble";
 }
 
 const char* needs_body_rumble()
@@ -100,7 +118,7 @@ void describe_gyro_ratcheting(std::string& text)
         text = "(No touchpad detected; Always On is now active until a touchpad is available.) " + text;
     }
     else if (mode >= 6 && needs_capsense_grip()) {
-        text = "(No Gripsense detected; Always On is now active until a controller with gripsense is available.) " + text;
+        text = "(No grip sensing detected; Always On is now active until a controller with gripsense is available.) " + text;
     }
     else if (g_alpine_game_config.gamepad_gyro_ratcheting >= 1
         && g_alpine_game_config.gamepad_gyro_ratcheting <= 3
@@ -459,6 +477,122 @@ const SettingRow rows[] = {
         .widget = Wid::Toggle,
         .access = AccBool{&AGS::gamepad_swap_sticks},
         .console_cmd = "joy_swap_sticks",
+    },
+    {
+        .id = "gamepad_touchpad_sensitivity",
+        .key = "GamepadTouchpadSensitivity",
+        .label = "Touchpad camera sensitivity",
+        .tooltip = "How fast the view turns per one full swipe (in camera degrees).",
+        .category = Cat::Input,
+        .subcategory = "Controller - Touchpad",
+        .widget = Wid::Slider,
+        .access = AccFloat{&AGS::gamepad_touchpad_sensitivity, nullptr, 0.0f, 720.0f},
+        .console_cmd = "touchpad_sens",
+        .ui_min = 0.0f,
+        .ui_max = 360.0f,
+        .ui_nudge = 5.0f,
+        .ui_decimals = 0,
+        .ui_zero_label = "Off",
+        .unavailable_reason = needs_touchpad_camera_device,
+    },
+    {
+        .id = "gamepad_scope_touchpad_sens",
+        .key = "GamepadScopeTouchpadSensitivityModifier",
+        .label = "Touchpad scope sensitivity",
+        .tooltip = "Touchpad camera sensitivity multiplier while zoomed.",
+        .category = Cat::Input,
+        .subcategory = "Controller - Touchpad",
+        .widget = Wid::Slider,
+        .access = AccFloat{&AGS::gamepad_scope_touchpad_sensitivity_modifier, &AGS::set_gamepad_scope_touchpad_sens_mod,
+            AGS::min_sens_mod, AGS::max_sens_mod},
+        .console_cmd = "touchpad_scope_sens",
+        .ui_min = 0.1f,
+        .ui_max = 3.0f,
+        .ui_nudge = 0.05f,
+        .ui_decimals = 2,
+        .unavailable_reason = needs_touchpad_camera,
+    },
+    {
+        .id = "gamepad_scanner_touchpad_sens",
+        .key = "GamepadScannerTouchpadSensitivityModifier",
+        .label = "Touchpad scanner sensitivity",
+        .tooltip = "Touchpad camera sensitivity multiplier while using the scanner.",
+        .category = Cat::Input,
+        .subcategory = "Controller - Touchpad",
+        .widget = Wid::Slider,
+        .access = AccFloat{&AGS::gamepad_scanner_touchpad_sensitivity_modifier, &AGS::set_gamepad_scanner_touchpad_sens_mod,
+            AGS::min_sens_mod, AGS::max_sens_mod},
+        .console_cmd = "touchpad_scanner_sens",
+        .ui_min = 0.1f,
+        .ui_max = 3.0f,
+        .ui_nudge = 0.05f,
+        .ui_decimals = 2,
+        .unavailable_reason = needs_touchpad_camera,
+    },
+    {
+        .id = "gamepad_touchpad_filter",
+        .key = "GamepadTouchpadFilter",
+        .label = "Touchpad Filter",
+        .tooltip = "Filter Touchpad input for camera controls. Auto applies filters for dual-touchpad controllers.",
+        .category = Cat::Input,
+        .subcategory = "Controller - Touchpad",
+        .widget = Wid::Enum,
+        .access = AccInt{&AGS::gamepad_touchpad_filter, nullptr, 0, 2},
+        .flags = SF_ADVANCED,
+        ENUM_LABELS(labels_touchpad_filter),
+        .console_cmd = "touchpad_filter",
+        .unavailable_reason = needs_touchpad_camera,
+    },
+    {
+        .id = "gamepad_touchpad_smoothing",
+        .key = "GamepadTouchpadSmoothing",
+        .label = "Touchpad smoothing",
+        .tooltip = "Smooths touchpad movement.",
+        .category = Cat::Input,
+        .subcategory = "Controller - Touchpad",
+        .widget = Wid::Slider,
+        .access = AccFloat{&AGS::gamepad_touchpad_smoothing, nullptr, 0.0f, 100.0f},
+        .console_cmd = "touchpad_smoothing",
+        .ui_nudge = 1.0f,
+        .ui_decimals = 0,
+        .unavailable_reason = needs_touchpad_camera,
+    },
+    {
+        .id = "gamepad_touchpad_invert_y",
+        .key = "GamepadTouchpadInvertY",
+        .label = "Invert touchpad Y",
+        .tooltip = "Invert vertical touchpad camera.",
+        .category = Cat::Input,
+        .subcategory = "Controller - Touchpad",
+        .widget = Wid::Toggle,
+        .access = AccBool{&AGS::gamepad_touchpad_invert_y},
+        .console_cmd = "touchpad_invert_y",
+        .unavailable_reason = needs_touchpad_camera,
+    },
+    {
+        .id = "gamepad_swap_touchpads",
+        .key = "GamepadSwapTouchpads",
+        .label = "Swap touchpads",
+        .tooltip = "Swaps Trackpad for movement and camera controls",
+        .category = Cat::Input,
+        .subcategory = "Controller - Touchpad",
+        .widget = Wid::Toggle,
+        .access = AccBool{&AGS::gamepad_swap_touchpads},
+        .console_cmd = "swap_touchpads",
+        .unavailable_reason = needs_dual_touchpads,
+    },
+    {
+        .id = "gamepad_single_touchpad_camera",
+        .key = "GamepadSingleTouchpadCamera",
+        .label = "Touchpad Camera (single touchpad)",
+        .tooltip = "Enables Touchpad Camera using a single-touchpad.",
+        .category = Cat::Input,
+        .subcategory = "Controller - Touchpad",
+        .widget = Wid::Toggle,
+        .access = AccBool{&AGS::gamepad_single_touchpad_camera},
+        .flags = SF_ADVANCED,
+        .console_cmd = "touchpad_single_camera",
+        .unavailable_reason = needs_touchpad,
     },
     {
         .id = "gamepad_gyro_enabled",
@@ -877,8 +1011,8 @@ const SettingRow rows[] = {
     {
         .id = "gamepad_lightbar_effects",
         .key = "GamepadLightbarEffect",
-        .label = "Controller light effects",
-        .tooltip = "[EXPERIMENTAL] Show health status on the controller's light bar.",
+        .label = "Controller lightbar effects",
+        .tooltip = "[EXPERIMENTAL] Show health status on the controller's lightbar.",
         .category = Cat::Input,
         .subcategory = "Controller - Effects",
         .widget = Wid::Toggle,

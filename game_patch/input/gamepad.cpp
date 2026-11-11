@@ -40,6 +40,7 @@ static bool g_rumble_supported         = false;
 static bool g_trigger_rumble_supported = false;
 static bool g_led_supported            = false;
 static bool g_touchpad_supported        = false;
+static bool g_has_dual_touchpads        = false; // 2+ touchpads (Steam Controller, Steam Deck): one steers the camera, the other scrolls menus
 
 static float g_camera_gamepad_dx = 0.0f;
 static float g_camera_gamepad_dy = 0.0f;
@@ -50,6 +51,9 @@ static float g_gamepad_scope_gyro_sensitivity_value = 0.25f;
 static float g_gamepad_scanner_gyro_sensitivity_value = 0.25f;
 static float g_gamepad_scope_applied_dynamic_sensitivity_value = 1.0f;
 static float g_gamepad_scope_gyro_applied_dynamic_sensitivity_value = 1.0f;
+static float g_gamepad_scope_touchpad_sensitivity_value = 0.25f;
+static float g_gamepad_scanner_touchpad_sensitivity_value = 0.25f;
+static float g_gamepad_scope_touchpad_applied_dynamic_sensitivity_value = 1.0f;
 
 static int g_button_map[SDL_GAMEPAD_BUTTON_COUNT];
 static int g_trigger_action[2] = {rf::CC_ACTION_CROUCH, rf::CC_ACTION_SECONDARY_ATTACK}; // [0] = LT, [1] = RT
@@ -90,13 +94,108 @@ struct MenuNavState {
 };
 static MenuNavState g_menu_nav;
 
+// 1€ Filter 
+// https://github.com/casiez/OneEuroFilter
+struct OneEuroFilter {
+    static constexpr float default_mincutoff = 1.5f;
+    static constexpr float default_beta = 15.0f;
+    float mincutoff = default_mincutoff;
+    float beta      = default_beta;
+    float dcutoff   = 1.0f;
+
+    void reset() { first_time = true; }
+
+    float filter(float x, float rate)
+    {
+        float dx;
+        if (first_time) {
+            first_time = false;
+            x_hat  = x;
+            dx_hat = 0.0f;
+            x_prev = x;
+            return x;
+        }
+        dx     = (x - x_prev) * rate;
+        float a_d  = alpha(rate, dcutoff);
+        dx_hat = a_d * dx + (1.0f - a_d) * dx_hat;
+        float a    = alpha(rate, mincutoff + beta * std::abs(dx_hat));
+        x_hat  = a * x + (1.0f - a) * x_hat;
+        x_prev = x;
+        return x_hat;
+    }
+
+private:
+    bool  first_time = true;
+    float x_hat  = 0.0f;
+    float dx_hat = 0.0f;
+    float x_prev = 0.0f;
+
+    static float alpha(float rate, float cutoff)
+    {
+        float tau = 1.0f / (6.2831853f * cutoff);
+        float te  = 1.0f / rate;
+        return 1.0f / (1.0f + tau / te);
+    }
+};
+
 struct TouchpadState {
-    bool  active = false;
+    bool  active            = false;
+    bool  skip_first_motion = false;
     float last_x = 0.0f;
     float last_y = 0.0f;
+
+    bool compute_delta(float new_x, float new_y, float& out_dx, float& out_dy)
+    {
+        if (skip_first_motion) {
+            skip_first_motion = false;
+            last_x = new_x;
+            last_y = new_y;
+            out_dx = out_dy = 0.0f;
+            return false;
+        }
+        out_dx = new_x - last_x;
+        out_dy = new_y - last_y;
+        last_x = new_x;
+        last_y = new_y;
+        return true;
+    }
 };
-static TouchpadState g_touchpad;
+
+static TouchpadState g_touchpad;       // camera pad (dual-touchpad) or the only pad (single-touchpad)
+static TouchpadState g_touchpad_camera_filtered;
+static TouchpadState g_touchpad_left;  // scroll pad, dual-touchpad devices only
+static float g_touchpad_left_scroll_accum = 0.0f;
+static float g_touchpad_menu_scroll_steps = 0.0f;
+static constexpr float k_touchpad_scroll_step = 0.05f;
+static float g_touchpad_cam_dx = 0.0f;
+static float g_touchpad_cam_dy = 0.0f;
+static OneEuroFilter g_touchpad_filter_x;
+static OneEuroFilter g_touchpad_filter_y;
+static OneEuroFilter g_touchpad_scroll_filter;
+static bool g_touchpad_filter_active = false;
+static Uint64        g_touchpad_cam_last_ts = 0;
+static Uint64        g_touchpad_scroll_last_ts = 0;
+static float         g_touchpad_scroll_last_y = 0.0f;
 static bool is_gamepad_controls_rebind_active();
+
+// Physical touchpad index for camera (1) vs scroll (0), flipped by gamepad_swap_touchpads.
+static int  dual_cam_pad_idx()    { return g_alpine_game_config.gamepad_swap_touchpads ? 0 : 1; }
+static int  dual_scroll_pad_idx() { return g_alpine_game_config.gamepad_swap_touchpads ? 1 : 0; }
+static bool is_cam_pad(int pad)    { return pad == (g_has_dual_touchpads ? dual_cam_pad_idx() : 0); }
+static bool is_scroll_pad(int pad) { return g_has_dual_touchpads && pad == dual_scroll_pad_idx(); }
+// True if an SDL button press is the click of the camera touchpad. On dual-touchpad hardware the
+// first pad's click is SDL_GAMEPAD_BUTTON_TOUCHPAD and the second pad's is SDL_GAMEPAD_BUTTON_MISC2.
+static bool is_cam_pad_button(int btn)
+{
+    return (btn == SDL_GAMEPAD_BUTTON_TOUCHPAD && (!g_has_dual_touchpads || dual_cam_pad_idx() == 0))
+        || (btn == SDL_GAMEPAD_BUTTON_MISC2    &&   g_has_dual_touchpads  && dual_cam_pad_idx() == 1);
+}
+
+static void reset_touchpad_camera_delta()
+{
+    g_touchpad_cam_dx = 0.0f;
+    g_touchpad_cam_dy = 0.0f;
+}
 
 // Capacitive sense state (stick touch / grip touch, e.g. Steam Controller 2, Steam Deck)
 static bool g_capsense_left_stick  = false;
@@ -254,6 +353,9 @@ static void try_open_gamepad(SDL_JoystickID id)
     if (!g_touchpad_supported)
         try_enable_gamepad_touchpad(gp, g_touchpad_supported);
     try_enable_gamepad_sensors(gp);
+    int num_touchpads = SDL_GetNumGamepadTouchpads(gp);
+    g_has_dual_touchpads |= (num_touchpads >= 2);
+    xlog::info("Gamepad touchpad count: {}", num_touchpads);
     g_capsense_grip_supported  |= SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_LEFT_GRIP)
                                || SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_RIGHT_GRIP);
     g_capsense_stick_supported |= SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_LEFT_STICK)
@@ -364,6 +466,10 @@ static void update_gamepad_scoped_sensitivities()
         (1.0f / (4.0f * g_alpine_game_config.gamepad_scope_sensitivity_modifier)) * rf::scope_sensitivity_constant;
     g_gamepad_scope_gyro_applied_dynamic_sensitivity_value =
         (1.0f / (4.0f * g_alpine_game_config.gamepad_scope_gyro_sensitivity_modifier)) * rf::scope_sensitivity_constant;
+    g_gamepad_scope_touchpad_sensitivity_value = g_alpine_game_config.gamepad_scope_touchpad_sensitivity_modifier;
+    g_gamepad_scanner_touchpad_sensitivity_value = g_alpine_game_config.gamepad_scanner_touchpad_sensitivity_modifier;
+    g_gamepad_scope_touchpad_applied_dynamic_sensitivity_value =
+        (1.0f / (4.0f * g_alpine_game_config.gamepad_scope_touchpad_sensitivity_modifier)) * rf::scope_sensitivity_constant;
 }
 
 static bool is_menu_only_action(int action_idx)
@@ -441,6 +547,7 @@ static void reset_gamepad_camera_state()
 static void reset_gamepad_input_state()
 {
     reset_gamepad_camera_state();
+    reset_touchpad_camera_delta();
     memset(g_action_curr, 0, sizeof(g_action_curr));
     g_move_lx = g_move_ly = 0.0f;
     g_move_mag = 0.0f;
@@ -747,6 +854,13 @@ static bool menu_nav_on_button_down(int btn)
     }
     switch (btn) {
     case SDL_GAMEPAD_BUTTON_TOUCHPAD:
+        if (!is_cam_pad_button(SDL_GAMEPAD_BUTTON_TOUCHPAD)) return true;
+        g_menu_nav.last_nav_was_dpad = false;
+        menu_nav_handle_confirm();
+        return true;
+    case SDL_GAMEPAD_BUTTON_MISC2:
+        if (!is_cam_pad_button(SDL_GAMEPAD_BUTTON_MISC2)) return false;
+        g_menu_nav.last_nav_was_dpad = false;
         menu_nav_handle_confirm();
         return true;
     case SDL_GAMEPAD_BUTTON_DPAD_UP:
@@ -769,7 +883,7 @@ static void menu_nav_on_button_up(int btn)
 {
     if (btn == g_menu_nav.repeat_btn)
         g_menu_nav.repeat_btn = -1;
-    if (btn == static_cast<int>(get_menu_confirm_button()) || btn == SDL_GAMEPAD_BUTTON_TOUCHPAD)
+    if (btn == static_cast<int>(get_menu_confirm_button()) || is_cam_pad_button(btn))
         menu_nav_release_click();
 }
 
@@ -890,6 +1004,17 @@ static void release_all_gamepad_inputs()
     inject_action_key(g_trigger_action[1], false);
     menu_nav_release_click();
     g_touchpad = {};
+    g_touchpad_camera_filtered = {};
+    g_touchpad_left = {};
+    g_touchpad_left_scroll_accum = 0.0f;
+    g_touchpad_menu_scroll_steps = 0.0f;
+    reset_touchpad_camera_delta();
+    g_touchpad_filter_x.reset();
+    g_touchpad_filter_y.reset();
+    g_touchpad_filter_active = false;
+    g_touchpad_scroll_filter.reset();
+    g_touchpad_cam_last_ts = 0;
+    g_touchpad_scroll_last_ts = 0;
     g_capsense_left_stick  = false;
     g_capsense_right_stick = false;
     g_capsense_left_grip   = false;
@@ -908,6 +1033,7 @@ static void reset_gamepad_capability_flags()
     g_trigger_rumble_supported = false;
     g_led_supported            = false;
     g_touchpad_supported       = false;
+    g_has_dual_touchpads       = false;
     g_capsense_grip_supported  = false;
     g_capsense_stick_supported = false;
 }
@@ -944,8 +1070,12 @@ static void handle_gamepad_removed(const SDL_GamepadDeviceEvent& ev)
 
     // Clear sensor flag if no remaining controller has sensors enabled
     bool any_sensor = false, any_capsense_grip = false, any_capsense_stick = false;
+    bool any_touchpad = false, any_dual_touchpad = false;
     for (auto* gp : g_gamepads) {
         if (!gp) continue;
+        const int touchpads = SDL_GetNumGamepadTouchpads(gp);
+        if (touchpads >= 1) any_touchpad = true;
+        if (touchpads >= 2) any_dual_touchpad = true;
         if (SDL_GamepadSensorEnabled(gp, SDL_SENSOR_GYRO)) any_sensor = true;
         if (SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_LEFT_GRIP)
          || SDL_GamepadHasCapSense(gp, SDL_GAMEPAD_CAPSENSE_RIGHT_GRIP))   any_capsense_grip = true;
@@ -955,6 +1085,8 @@ static void handle_gamepad_removed(const SDL_GamepadDeviceEvent& ev)
     if (!any_sensor)         g_motion_sensors_supported = false;
     if (!any_capsense_grip)  g_capsense_grip_supported  = false;
     if (!any_capsense_stick) g_capsense_stick_supported = false;
+    if (!any_touchpad)       g_touchpad_supported        = false;
+    if (!any_dual_touchpad)  g_has_dual_touchpads       = false;
     xlog::info("Remaining gamepad: '{}'", SDL_GetGamepadName(gamepad_get_primary()));
 }
 
@@ -1058,18 +1190,71 @@ static bool touchpad_input_blocked()
 {
     if (!is_gamepad_controls_rebind_active()) return false;
     g_touchpad.active = false;
+    g_touchpad_left.active = false;
     return true;
+}
+
+// Vertical swipe on the scroll pad scrolls menus (dual-touchpad devices only).
+static void handle_touchpad_left_scroll(const SDL_GamepadTouchpadEvent& ev)
+{
+    if (g_message_log_close_cooldown > 0.0f) return;
+    if (!is_gamepad_menu_navigation_state()) return;
+    if (rf::gameseq_get_state() == rf::GS_OPTIONS_MENU && !legacy_menus_enabled()) {
+        float rate = 125.0f;
+        if (g_touchpad_scroll_last_ts > 0 && ev.timestamp > g_touchpad_scroll_last_ts) {
+            float dt = static_cast<float>(ev.timestamp - g_touchpad_scroll_last_ts) * 1e-9f;
+            if (dt > 0.001f && dt < 0.1f)
+                rate = 1.0f / dt;
+        }
+        g_touchpad_scroll_last_ts = ev.timestamp;
+        float filtered_y = g_touchpad_scroll_filter.filter(ev.y, rate);
+        float dy = filtered_y - g_touchpad_scroll_last_y;
+        g_touchpad_scroll_last_y = filtered_y;
+        g_touchpad_menu_scroll_steps += dy / k_touchpad_scroll_step;
+        return;
+    }
+    float dy = ev.y - g_touchpad_left.last_y;
+    g_touchpad_left.last_y = ev.y;
+    g_touchpad_left_scroll_accum += dy;
+    if (g_touchpad_left_scroll_accum >= k_touchpad_scroll_step) {
+        g_touchpad_left_scroll_accum -= k_touchpad_scroll_step;
+        rf::mouse_dz = -1;
+        if (rf::gameseq_get_state() == rf::GS_MESSAGE_LOG)
+            rf::ui::message_log_down_on_click(-1, -1);
+    } else if (g_touchpad_left_scroll_accum <= -k_touchpad_scroll_step) {
+        g_touchpad_left_scroll_accum += k_touchpad_scroll_step;
+        rf::mouse_dz = 1;
+        if (rf::gameseq_get_state() == rf::GS_MESSAGE_LOG)
+            rf::ui::message_log_up_on_click(-1, -1);
+    }
 }
 
 static void handle_gamepad_touchpad_down(const SDL_GamepadTouchpadEvent& ev)
 {
     if (!is_gamepad_input_active() || !is_open_gamepad_id(ev.which)) return;
-    if (ev.touchpad != 0 || ev.finger != 0) return;
+    if (ev.finger != 0) return;
     if (touchpad_input_blocked()) return;
+    if (is_scroll_pad(ev.touchpad)) {
+        g_touchpad_left.active = true;
+        g_touchpad_left.last_y = ev.y;
+        g_touchpad_left_scroll_accum = 0.0f;
+        g_touchpad_menu_scroll_steps = 0.0f;
+        g_touchpad_scroll_filter.reset();
+        g_touchpad_scroll_last_ts = ev.timestamp;
+        g_touchpad_scroll_last_y = g_touchpad_scroll_filter.filter(ev.y, 125.0f);
+        input_record_activity(InputDevice::Gamepad, ev.which);
+        return;
+    }
+    if (!is_cam_pad(ev.touchpad)) return;
     if (g_message_log_close_cooldown > 0.0f) return;
-    g_touchpad.active = true;
-    g_touchpad.last_x = ev.x;
-    g_touchpad.last_y = ev.y;
+    g_touchpad.active            = true;
+    g_touchpad.last_x            = ev.x;
+    g_touchpad.last_y            = ev.y;
+    g_touchpad_camera_filtered.skip_first_motion = true;
+    g_touchpad_filter_x.reset();
+    g_touchpad_filter_y.reset();
+    g_touchpad_filter_active = false;
+    g_touchpad_cam_last_ts = ev.timestamp;
     g_menu_cursor_accum_x = 0.0f;
     g_menu_cursor_accum_y = 0.0f;
     input_record_activity(InputDevice::Gamepad, ev.which);
@@ -1078,26 +1263,75 @@ static void handle_gamepad_touchpad_down(const SDL_GamepadTouchpadEvent& ev)
 static void handle_gamepad_touchpad_motion(const SDL_GamepadTouchpadEvent& ev)
 {
     if (!is_gamepad_input_active() || !is_open_gamepad_id(ev.which)) return;
-    if (ev.touchpad != 0 || ev.finger != 0) return;
+    if (ev.finger != 0) return;
     if (touchpad_input_blocked()) return;
+
+    // Scroll pad (dual-touchpad devices): scroll only.
+    if (is_scroll_pad(ev.touchpad) && g_touchpad_left.active) {
+        handle_touchpad_left_scroll(ev);
+        return;
+    }
+
+    // Camera pad (dual-touchpad) or only pad (single-touchpad): menu cursor or camera.
+    if (!is_cam_pad(ev.touchpad)) return;
     if (!g_touchpad.active) return;
+
     float dx = ev.x - g_touchpad.last_x;
     float dy = ev.y - g_touchpad.last_y;
     g_touchpad.last_x = ev.x;
     g_touchpad.last_y = ev.y;
+    const bool in_menu = is_gamepad_menu_navigation_state();
+    const int filter_mode = g_alpine_game_config.gamepad_touchpad_filter;
+    const bool use_filter = in_menu ? g_has_dual_touchpads
+        : (filter_mode == 1 || (filter_mode == 0 && g_has_dual_touchpads));
+    if (use_filter != g_touchpad_filter_active) {
+        g_touchpad_filter_x.reset();
+        g_touchpad_filter_y.reset();
+        g_touchpad_camera_filtered.skip_first_motion = true;
+        g_touchpad_filter_active = use_filter;
+    }
+    if (use_filter) {
+        float rate = 125.0f;
+        if (g_touchpad_cam_last_ts > 0 && ev.timestamp > g_touchpad_cam_last_ts) {
+            float dt = static_cast<float>(ev.timestamp - g_touchpad_cam_last_ts) * 1e-9f;
+            if (dt > 0.001f && dt < 0.1f)
+                rate = 1.0f / dt;
+        }
+        g_touchpad_cam_last_ts = ev.timestamp;
+        float smooth = in_menu ? 0.0f : g_alpine_game_config.gamepad_touchpad_smoothing / 100.0f;
+        // Exponential scaling: effect is perceptible across the full 0 to 1 range
+        g_touchpad_filter_x.mincutoff = g_touchpad_filter_y.mincutoff = OneEuroFilter::default_mincutoff * std::pow(0.013f, smooth); // 0: 1.5 Hz, 0.5: 0.17 Hz, 1: 0.02 Hz
+        g_touchpad_filter_x.beta      = g_touchpad_filter_y.beta      = OneEuroFilter::default_beta * std::pow(0.067f, smooth); // 0: 15,     0.5: 3.9,     1: 1
+        float fx = g_touchpad_filter_x.filter(ev.x, rate);
+        float fy = g_touchpad_filter_y.filter(ev.y, rate);
+        if (!g_touchpad_camera_filtered.compute_delta(fx, fy, dx, dy)) return;
+    }
+
     if (g_message_log_close_cooldown > 0.0f) return;
-    if (!is_gamepad_menu_navigation_state()) return;
-    float sensitivity = g_alpine_game_config.gamepad_touchpad_menu_cursor_sensitivity;
-    float fdx = dx * static_cast<float>(rf::gr::screen_width()) * sensitivity;
-    float fdy = dy * static_cast<float>(rf::gr::screen_height()) * sensitivity;
-    menu_nav_apply_cursor_delta(fdx, fdy);
+    if (in_menu) {
+        float sensitivity = g_alpine_game_config.gamepad_touchpad_menu_cursor_sensitivity;
+        float fdx = dx * static_cast<float>(rf::gr::screen_width()) * sensitivity;
+        float fdy = dy * static_cast<float>(rf::gr::screen_height()) * sensitivity;
+        menu_nav_apply_cursor_delta(fdx, fdy);
+    } else if (gamepad_touchpad_camera_available()) {
+        g_touchpad_cam_dx += dx;
+        g_touchpad_cam_dy += dy;
+    }
 }
 
 static void handle_gamepad_touchpad_up(const SDL_GamepadTouchpadEvent& ev)
 {
     if (!is_gamepad_input_active() || !is_open_gamepad_id(ev.which)) return;
-    if (ev.touchpad != 0 || ev.finger != 0) return;
+    if (ev.finger != 0) return;
     if (touchpad_input_blocked()) return;
+    if (is_scroll_pad(ev.touchpad)) {
+        g_touchpad_left.active = false;
+        g_touchpad_left_scroll_accum = 0.0f;
+        g_touchpad_scroll_filter.reset();
+        g_touchpad_scroll_last_ts = 0;
+        return;
+    }
+    if (!is_cam_pad(ev.touchpad)) return;
     g_touchpad.active = false;
 }
 
@@ -1228,6 +1462,7 @@ static void menu_nav_handle_gyro_cursor_frame()
 
 static void menu_nav_handle_cursor_frame()
 {
+    if (g_has_dual_touchpads && (g_touchpad_left.active || g_touchpad.active)) return;
     constexpr float k_menu_stick_deadzone = 0.24f;
     constexpr float k_base_speed          = 1000.0f;
     float sx, sy;
@@ -1252,6 +1487,7 @@ static void menu_nav_tick_dpad_repeat()
 
 static void menu_nav_tick_scroll()
 {
+    if (g_has_dual_touchpads && g_touchpad.active) return;
     if (rf::gameseq_get_state() == rf::GS_OPTIONS_MENU && !legacy_menus_enabled()) {
         g_menu_nav.scroll_timer = 0.0f;
         return;
@@ -1280,8 +1516,20 @@ float gamepad_consume_menu_scroll()
         || !is_gamepad_menu_navigation_state()) {
         return 0.0f;
     }
+    if (g_has_dual_touchpads && g_touchpad.active) return 0.0f;
     constexpr float k_scroll_deadzone = 0.24f;
     return std::clamp(get_axis(SDL_GAMEPAD_AXIS_RIGHTY, k_scroll_deadzone), -1.0f, 1.0f);
+}
+
+float gamepad_consume_touchpad_menu_scroll_steps()
+{
+    const float scroll_steps = g_touchpad_menu_scroll_steps;
+    g_touchpad_menu_scroll_steps = 0.0f;
+    if (g_message_log_close_cooldown > 0.0f || !is_gamepad_input_active()
+        || rf::gameseq_get_state() != rf::GS_OPTIONS_MENU || legacy_menus_enabled()) {
+        return 0.0f;
+    }
+    return scroll_steps;
 }
 
 static void gamepad_do_menu_frame()
@@ -1518,6 +1766,23 @@ static void gamepad_apply_gyro(bool has_player_entity, float& yaw_delta, float& 
     pitch_delta += out_pitch;
 }
 
+// Camera pad swipe, scaled like the other look inputs while zoomed.
+static void gamepad_apply_touchpad(bool has_player_entity, float& yaw_delta, float& pitch_delta)
+{
+    if (g_touchpad_cam_dx == 0.0f && g_touchpad_cam_dy == 0.0f) return;
+
+    float touchpad_zoom_sens = compute_zoom_sensitivity_scale(has_player_entity,
+        g_gamepad_scanner_touchpad_sensitivity_value, g_gamepad_scope_touchpad_sensitivity_value,
+        g_gamepad_scope_touchpad_applied_dynamic_sensitivity_value);
+
+    constexpr float deg2rad = 3.14159265f / 180.0f;
+    float sens = g_alpine_game_config.gamepad_touchpad_sensitivity * deg2rad;
+    float invert = g_alpine_game_config.gamepad_touchpad_invert_y ? 1.0f : -1.0f;
+    yaw_delta   += g_touchpad_cam_dx * sens * touchpad_zoom_sens;
+    pitch_delta += g_touchpad_cam_dy * sens * touchpad_zoom_sens * invert;
+    reset_touchpad_camera_delta();
+}
+
 // Multiplayer vehicle look follows the same two diversions as mouse_get_delta_hook.
 static bool gamepad_vehicle_look_is_external()
 {
@@ -1563,6 +1828,7 @@ void consume_raw_gamepad_deltas(float& pitch_delta, float& yaw_delta)
     // Early exit: clear camera state when not in active gameplay
     if (!is_gamepad_input_active() || !rf::keep_mouse_centered || (!has_player_entity && !is_freelook)) {
         reset_gamepad_camera_state();
+        reset_touchpad_camera_delta();
         return;
     }
 
@@ -1570,6 +1836,7 @@ void consume_raw_gamepad_deltas(float& pitch_delta, float& yaw_delta)
     if (rf::local_player && rf::local_player->view_from_handle != -1) {
         release_movement_keys();
         reset_gamepad_camera_state();
+        reset_touchpad_camera_delta();
         return;
     }
 
@@ -1592,14 +1859,18 @@ void consume_raw_gamepad_deltas(float& pitch_delta, float& yaw_delta)
         g_gamepad_scanner_sensitivity_value, g_gamepad_scope_sensitivity_value,
         g_gamepad_scope_applied_dynamic_sensitivity_value);
 
+    // The stick stands down while a finger is on the camera pad.
+    const bool cam_pad_active = gamepad_touchpad_camera_available() && g_touchpad.active;
     bool allow_flickstick = g_alpine_game_config.gamepad_joy_camera && !freelook_camera_active
         && (!is_scoped_or_scanning || g_alpine_game_config.gamepad_flickstick_allow_scoped);
-    if (allow_flickstick) {
-        gamepad_apply_flickstick(cam_x, cam_y, yaw_delta, pitch_delta);
-        yaw_delta   *= gamepad_zoom_sens;
-        pitch_delta *= gamepad_zoom_sens;
-    } else {
-        gamepad_apply_joystick(cam_x, cam_y, cam_dz, gamepad_zoom_sens, yaw_delta, pitch_delta);
+    if (!cam_pad_active) {
+        if (allow_flickstick) {
+            gamepad_apply_flickstick(cam_x, cam_y, yaw_delta, pitch_delta);
+            yaw_delta   *= gamepad_zoom_sens;
+            pitch_delta *= gamepad_zoom_sens;
+        } else {
+            gamepad_apply_joystick(cam_x, cam_y, cam_dz, gamepad_zoom_sens, yaw_delta, pitch_delta);
+        }
     }
 
     // Single-player vehicles keep their gyro opt-in; in multiplayer this is never the vehicle camera,
@@ -1607,6 +1878,10 @@ void consume_raw_gamepad_deltas(float& pitch_delta, float& yaw_delta)
     const bool sp_vehicle = !rf::is_multi && has_player_entity && rf::entity_in_vehicle(rf::local_player_entity);
     if (!freelook_camera_active && gyro_look_allowed(sp_vehicle))
         gamepad_apply_gyro(has_player_entity, yaw_delta, pitch_delta);
+
+    // Single-player vehicles take the swipe through ci.rot in apply_vehicle_camera_input instead.
+    if (gamepad_touchpad_camera_available() && !sp_vehicle)
+        gamepad_apply_touchpad(has_player_entity, yaw_delta, pitch_delta);
 
     g_camera_gamepad_dx += pitch_delta;
     g_camera_gamepad_dy += yaw_delta;
@@ -1636,6 +1911,9 @@ void consume_vehicle_orbit_gamepad_deltas(float& pitch_delta, float& yaw_delta)
     if (gyro_look_allowed(true)) {
         gamepad_apply_gyro(false, yaw_delta, pitch_delta); // false: no scope/scanner scaling, like the mouse
     }
+
+    if (gamepad_touchpad_camera_available())
+        gamepad_apply_touchpad(false, yaw_delta, pitch_delta);
 }
 
 void flush_freelook_gamepad_deltas()
@@ -1694,6 +1972,26 @@ static bool is_local_player_vehicle(rf::Entity* entity)
     return vehicle == entity;
 }
 
+// Camera pad swipe rate (delta / frametime) mapped to ci.rot, the same ±1.0 range as keyboard input.
+static void apply_vehicle_touchpad_input(rf::Entity* entity, float pitch_scale)
+{
+    if (!gamepad_touchpad_camera_available()) return;
+    if (rf::frametime > 0.0f) {
+        constexpr float k_touchpad_vehicle_deadzone = 0.0015f;
+        float mag = std::sqrt(g_touchpad_cam_dx * g_touchpad_cam_dx + g_touchpad_cam_dy * g_touchpad_cam_dy);
+        if (mag >= k_touchpad_vehicle_deadzone) {
+            constexpr float deg2rad = 3.14159265f / 180.0f;
+            constexpr float touchpad_to_rot = 2.0f / 3.14159265f; // pi/2 rad = 1.0 rot unit
+            constexpr float k_default_touchpad_sens = 2.0f;       // 180 degrees * deg2rad * touchpad_to_rot
+            float sens = g_alpine_game_config.gamepad_touchpad_sensitivity * deg2rad * touchpad_to_rot / k_default_touchpad_sens;
+            float invert = g_alpine_game_config.gamepad_touchpad_invert_y ? 1.0f : -1.0f;
+            entity->ai.ci.rot.y += std::clamp(g_touchpad_cam_dx / rf::frametime * sens, -1.0f, 1.0f);
+            entity->ai.ci.rot.x += std::clamp(invert * g_touchpad_cam_dy / rf::frametime * sens, -1.0f, 1.0f) * pitch_scale;
+        }
+    }
+    reset_touchpad_camera_delta();
+}
+
 // Inject stick + gyro into vehicle rotation (ci.rot, range ±1.0 like keyboard input).
 // pitch_scale maps the pitch axis into the range the consumer expects of ci.rot.x.
 static void apply_vehicle_camera_input(rf::Entity* entity, float pitch_scale = 1.0f)
@@ -1728,6 +2026,8 @@ static void apply_vehicle_camera_input(rf::Entity* entity, float pitch_scale = 1
         entity->ai.ci.rot.y += std::clamp(yaw_sign * -gyro_yaw * gyro_to_rot * sens, -1.0f, 1.0f);
         entity->ai.ci.rot.x += std::clamp(pitch_sign * gyro_pitch * gyro_to_rot * sens, -1.0f, 1.0f) * pitch_scale;
     }
+
+    apply_vehicle_touchpad_input(entity, pitch_scale);
 }
 
 // Multiplayer vphys hulls skip physics_simulate_entity, so the seat that steers one gets its stick and
@@ -2063,6 +2363,86 @@ ConsoleCommand2 touchpad_menu_cursor_sens_cmd{
     "touchpad_menu_cursor_sens <value> (valid range: 0.0 - 3.0)",
 };
 
+ConsoleCommand2 touchpad_sens_cmd{
+    "touchpad_sens",
+    [](std::optional<float> val) {
+        if (val && !setting_console_set("gamepad_touchpad_sensitivity", std::to_string(*val))) return;
+        rf::console::print("Touchpad camera turn per full swipe: {:.1f} degrees", g_alpine_game_config.gamepad_touchpad_sensitivity);
+    },
+    "Set touchpad camera turn per full swipe (default 180)",
+    "touchpad_sens [degrees]",
+};
+
+ConsoleCommand2 touchpad_scope_sens_cmd{
+    "touchpad_scope_sens",
+    [](std::optional<float> val) {
+        if (val && !setting_console_set("gamepad_scope_touchpad_sens", std::to_string(*val))) return;
+        rf::console::print("Touchpad scope sensitivity modifier: {:.4f}", g_alpine_game_config.gamepad_scope_touchpad_sensitivity_modifier);
+    },
+    "Set touchpad scope sensitivity modifier (default 0.25)",
+    "touchpad_scope_sens [value]",
+};
+
+ConsoleCommand2 touchpad_scanner_sens_cmd{
+    "touchpad_scanner_sens",
+    [](std::optional<float> val) {
+        if (val && !setting_console_set("gamepad_scanner_touchpad_sens", std::to_string(*val))) return;
+        rf::console::print("Touchpad scanner sensitivity modifier: {:.4f}", g_alpine_game_config.gamepad_scanner_touchpad_sensitivity_modifier);
+    },
+    "Set touchpad scanner sensitivity modifier (default 0.25)",
+    "touchpad_scanner_sens [value]",
+};
+
+ConsoleCommand2 touchpad_smoothing_cmd{
+    "touchpad_smoothing",
+    [](std::optional<float> val) {
+        if (val && !setting_console_set("gamepad_touchpad_smoothing", std::to_string(*val))) return;
+        rf::console::print("Touchpad smoothing: {:.1f}", g_alpine_game_config.gamepad_touchpad_smoothing);
+    },
+    "Set touchpad smoothing 0.0-100.0 (default 8.0, higher is smoother)",
+    "touchpad_smoothing [value]",
+};
+
+ConsoleCommand2 touchpad_filter_cmd{
+    "touchpad_filter",
+    [](std::optional<int> val) {
+        if (val && !setting_console_set("gamepad_touchpad_filter", std::to_string(*val))) return;
+        rf::console::print("Touchpad filter: {} (0=Auto, 1=On, 2=Off)", g_alpine_game_config.gamepad_touchpad_filter);
+    },
+    "Set gameplay touchpad filter mode (default Auto)",
+    "touchpad_filter [0|1|2] (0=Auto, 1=On, 2=Off)",
+};
+
+ConsoleCommand2 touchpad_single_camera_cmd{
+    "touchpad_single_camera",
+    [](std::optional<int> val) {
+        if (!setting_console_set_bool("gamepad_single_touchpad_camera", val ? std::optional<bool>(*val != 0) : std::nullopt)) return;
+        rf::console::print("Single touchpad camera: {}", g_alpine_game_config.gamepad_single_touchpad_camera ? "enabled" : "disabled");
+    },
+    "Toggle camera control on single-touchpad controllers (default off)",
+    "touchpad_single_camera [0|1]",
+};
+
+ConsoleCommand2 touchpad_invert_y_cmd{
+    "touchpad_invert_y",
+    [](std::optional<int> val) {
+        if (!setting_console_set_bool("gamepad_touchpad_invert_y", val ? std::optional<bool>(*val != 0) : std::nullopt)) return;
+        rf::console::print("Touchpad invert Y: {}", g_alpine_game_config.gamepad_touchpad_invert_y ? "on" : "off");
+    },
+    "Toggle touchpad camera Y-axis inversion (default 0)",
+    "touchpad_invert_y [0|1]",
+};
+
+ConsoleCommand2 swap_touchpads_cmd{
+    "swap_touchpads",
+    [](std::optional<int> val) {
+        if (!setting_console_set_bool("gamepad_swap_touchpads", val ? std::optional<bool>(*val != 0) : std::nullopt)) return;
+        rf::console::print("Swap touchpads: {}", g_alpine_game_config.gamepad_swap_touchpads ? "enabled" : "disabled");
+    },
+    "Swap camera and scroll touchpads on dual-touchpad devices (default 0)",
+    "swap_touchpads [0|1]",
+};
+
 ConsoleCommand2 joy_menu_cursor_sens_cmd{
     "joy_menu_cursor_sens",
     [](std::optional<float> val) {
@@ -2224,6 +2604,16 @@ bool gamepad_has_capsense_grip()
 bool gamepad_has_capsense_stick()
 {
     return g_capsense_stick_supported;
+}
+
+bool gamepad_has_dual_touchpads()
+{
+    return g_has_dual_touchpads;
+}
+
+bool gamepad_touchpad_camera_available()
+{
+    return g_has_dual_touchpads || (g_touchpad_supported && g_alpine_game_config.gamepad_single_touchpad_camera);
 }
 
 bool gamepad_is_touchpad_supported()
@@ -2514,6 +2904,14 @@ void gamepad_apply_patch()
     joy_camera_invert_y_cmd.register_cmd();
     gyro_scope_sens_cmd.register_cmd();
     gyro_scanner_sens_cmd.register_cmd();
+    touchpad_sens_cmd.register_cmd();
+    touchpad_scope_sens_cmd.register_cmd();
+    touchpad_scanner_sens_cmd.register_cmd();
+    touchpad_smoothing_cmd.register_cmd();
+    touchpad_filter_cmd.register_cmd();
+    touchpad_single_camera_cmd.register_cmd();
+    touchpad_invert_y_cmd.register_cmd();
+    swap_touchpads_cmd.register_cmd();
     joy_flickstick_cmd.register_cmd();
     joy_flickstick_sweep_cmd.register_cmd();
     joy_flickstick_invert_cmd.register_cmd();

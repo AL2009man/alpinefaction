@@ -171,6 +171,14 @@ Commands marked "D3D11 only" only have an effect with the Direct3D 11 renderer.
 | `joy_camera_deadzone` | `[0.0-0.9]` | Sets the camera stick deadzone. Default: 0.33. |
 | `joy_camera_invert_x` | `[0\|1]` | Inverts the camera stick X-axis. Default: off. |
 | `joy_camera_invert_y` | `[0\|1]` | Inverts the camera stick Y-axis. Default: off. |
+| `touchpad_sens` | `[value]` | Sets camera turn per full swipe (0-360 degrees). Default: 180. |
+| `touchpad_scope_sens` | `[value]` | Sets the touchpad scope sensitivity modifier (0.01-10). Default: 0.25. |
+| `touchpad_scanner_sens` | `[value]` | Sets the touchpad scanner sensitivity modifier (0.01-10). Default: 0.25. |
+| `touchpad_smoothing` | `[0-100]` | Sets gameplay touchpad smoothing. Default: 8. |
+| `touchpad_invert_y` | `[0\|1]` | Toggles or sets touchpad camera Y-axis inversion. Default: off. |
+| `swap_touchpads` | `[0\|1]` | Toggles or swaps camera and menu scrolling touchpads on dual-touchpad controllers. Default: off. |
+| `touchpad_single_camera` | `[0\|1]` | Toggles or sets camera control on single-touchpad controllers. Default: off. |
+| `touchpad_filter` | `[0\|1\|2]` | Sets gameplay touchpad filter. Default: `0` (only applies to dual-touchpad controllers) |
 | `gyro_camera` | `[0\|1]` | Enables gyro camera control. Default: off. |
 | `gyro_sens` | `[value]` | Sets gyro sensitivity (minimum 0). Default: 2.5. |
 | `gyro_scanner_sens` | `[value]` | Sets the gyro scanner sensitivity modifier (0.01-10). Default: 0.25. |

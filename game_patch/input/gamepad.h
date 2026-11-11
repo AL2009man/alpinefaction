@@ -32,6 +32,8 @@ void gamepad_apply_vehicle_driver_input(rf::Entity* vehicle);
 bool gamepad_is_motionsensors_supported();
 bool gamepad_is_trigger_rumble_supported();
 bool gamepad_is_touchpad_supported();
+bool gamepad_has_dual_touchpads(); // // True on 2+ touchpad hardware (Steam Controller, Steam Deck): one pad aims, the other scrolls menus
+bool gamepad_touchpad_camera_available();
 bool gamepad_is_touchpad_touched();
 bool gamepad_has_capsense_grip();
 
@@ -79,6 +81,8 @@ void gamepad_set_action_code(int action_idx, int slot, int code);
 
 // Right-stick menu scroll direction and magnitude (-1=up, +1=down).
 float gamepad_consume_menu_scroll();
+// Dual-touchpad swipe distance in fractional wheel steps; consumed once by the SVG settings menu.
+float gamepad_consume_touchpad_menu_scroll_steps();
 
 // Returns true if grip capsense is active (respects gamepad_gyro_gripsense setting; ignores touchpad and stick caps)
 bool gamepad_is_grip_held();

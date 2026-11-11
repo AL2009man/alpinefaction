@@ -83,6 +83,18 @@ struct AlpineGameSettings
         gamepad_scanner_gyro_sensitivity_modifier = std::clamp(mod, min_sens_mod, max_sens_mod);
     }
 
+    float gamepad_scope_touchpad_sensitivity_modifier = 0.25f;
+    void set_gamepad_scope_touchpad_sens_mod(float mod)
+    {
+        gamepad_scope_touchpad_sensitivity_modifier = std::clamp(mod, min_sens_mod, max_sens_mod);
+    }
+
+    float gamepad_scanner_touchpad_sensitivity_modifier = 0.25f;
+    void set_gamepad_scanner_touchpad_sens_mod(float mod)
+    {
+        gamepad_scanner_touchpad_sensitivity_modifier = std::clamp(mod, min_sens_mod, max_sens_mod);
+    }
+
     static constexpr float min_level_sound_volume = 0.0f;
     static constexpr float max_level_sound_volume = 1.0f;
     float level_sound_volume = 1.0f;
@@ -411,6 +423,9 @@ struct AlpineGameSettings
     float gamepad_joy_sensitivity = 2.5f;
     float gamepad_move_deadzone = 0.14f;
     float gamepad_look_deadzone = 0.33f;
+    bool gamepad_joy_invert_x = false;
+    bool gamepad_joy_invert_y = false;
+    bool gamepad_swap_sticks = false;
     bool gamepad_gyro_enabled = false;
     float gamepad_gyro_sensitivity = 2.5f;
     bool gamepad_gyro_vehicle_camera = false;
@@ -423,9 +438,12 @@ struct AlpineGameSettings
     float gamepad_gyro_tightening = 8.0f;
     float gamepad_gyro_smoothing = 7.0f;
     int gamepad_gyro_vh_mixer = 0;  // -100 = reduce vertical, 0 = 1:1, +100 = reduce horizontal
-    float gamepad_gyro_menu_cursor_sensitivity = 2.0f; // 0 = disabled
-    float gamepad_touchpad_menu_cursor_sensitivity = 1.0f;
-    float gamepad_joy_menu_cursor_sensitivity = 1.0f;
+    float gamepad_touchpad_sensitivity = 180.0f; // degrees of camera turn per full swipe
+    float gamepad_touchpad_smoothing = 8.0f;     // 0-100
+    bool gamepad_touchpad_invert_y = false;
+    bool gamepad_swap_touchpads = false;         // dual-touchpad only: swap which pad is camera vs scroll
+    bool gamepad_single_touchpad_camera = false;
+    int gamepad_touchpad_filter = 0; // 0=Auto, 1=On, 2=Off
     bool gamepad_joy_camera = false;
     bool gamepad_flickstick_allow_scoped = true;
     float gamepad_flickstick_sweep = 1.0f;    
@@ -433,11 +451,6 @@ struct AlpineGameSettings
     float gamepad_flickstick_release_deadzone = 0.70f;
     float gamepad_flickstick_smoothing = 0.75f;    
     bool gamepad_flickstick_invert = false;
-    int gamepad_icon_override = 0; // 0=Auto, 1=Generic, 2=Xbox360, 3=XboxOne, 4=DS3, 5=DS4, 6=DualSense, 7=NintendoSwitch, 8=NintendoGameCube, 9=Steam
-    int input_prompt_override = 0; // 0=Auto, 1=Controller, 2=Keyboard
-    bool gamepad_joy_invert_x = false;
-    bool gamepad_joy_invert_y = false;
-    bool gamepad_swap_sticks = false;
     float gamepad_rumble_intensity = 1.0f;
     bool gamepad_weapon_rumble_enabled = true;
     bool gamepad_environmental_rumble_enabled = true;
@@ -445,6 +458,11 @@ struct AlpineGameSettings
     int gamepad_rumble_vibration_filter = 1; // 0=Off, 1=Auto (reduce low-freq when gyro is active), 2=On (always reduce low-freq)
     bool gamepad_rumble_when_primary = true; // disable rumble when keyboard/mouse was last used
     bool gamepad_lightbar_effects = false; // health-indicator LED (green/orange/red/bleedout-white), if supported
+    float gamepad_gyro_menu_cursor_sensitivity = 2.0f; // 0 = disabled
+    float gamepad_touchpad_menu_cursor_sensitivity = 1.0f;
+    float gamepad_joy_menu_cursor_sensitivity = 1.0f;
+    int gamepad_icon_override = 0; // 0=Auto, 1=Generic, 2=Xbox360, 3=XboxOne, 4=DS3, 5=DS4, 6=DualSense, 7=NintendoSwitch, 8=NintendoGameCube, 9=Steam
+    int input_prompt_override = 0; // 0=Auto, 1=Controller, 2=Keyboard
     bool scoreboard_anim = true;
     bool legacy_bob = false;
     bool weapon_sway = false;
