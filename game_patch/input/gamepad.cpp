@@ -95,7 +95,7 @@ struct MenuNavState {
 static MenuNavState g_menu_nav;
 
 // 1€ Filter 
-// https://github.com/casiez/OneEuroFilter
+// https://github.com/casiez/OneEuroFilter - https://gery.casiez.net/1euro/
 struct OneEuroFilter {
     static constexpr float default_mincutoff = 1.5f;
     static constexpr float default_beta = 15.0f;
